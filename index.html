@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f4f4f4">
+  <title>STUDISH</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="STUDISH home">STUDISH</a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <button class="nav-link active" data-view="dashboard">Dashboard</button>
+        <button class="nav-link" data-view="tasks">Tasks</button>
+        <button class="nav-link" data-view="focus">Focus Timer</button>
+      </nav>
+      <div class="topbar-date" id="todayLabel"></div>
+    </header>
+
+    <main>
+      <section class="view active" id="dashboardView">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">YOUR STUDY SPACE</p>
+            <h1>Dashboard</h1>
+            <p class="muted">A clear view of what you need to get done.</p>
+          </div>
+          <button class="button button-dark" id="dashboardAddBtn">＋ Add Task</button>
+        </div>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <h2>Overview</h2>
+              <p class="muted small">Your academic progress at a glance</p>
+            </div>
+            <span class="live-dot">Updated automatically</span>
+          </div>
+          <div class="stats-grid">
+            <article class="stat-card"><span class="stat-label">Total tasks</span><strong id="totalStat">0</strong><span
+                class="stat-foot">All tasks</span></article>
+            <article class="stat-card"><span class="stat-label">Completed</span><strong
+                id="completedStat">0</strong><span class="stat-foot">Finished tasks</span></article>
+            <article class="stat-card"><span class="stat-label">Pending</span><strong id="pendingStat">0</strong><span
+                class="stat-foot">Still in progress</span></article>
+            <article class="stat-card"><span class="stat-label">Overdue</span><strong id="overdueStat">0</strong><span
+                class="stat-foot">Past due date</span></article>
+          </div>
+          <div class="progress-block">
+            <div class="progress-label"><span>Overall completion</span><strong id="completionText">0%</strong></div>
+            <div class="progress-track">
+              <div class="progress-fill" id="completionBar"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel deadlines-panel">
+          <div class="section-heading">
+            <div>
+              <h2>Upcoming deadlines</h2>
+              <p class="muted small">Keep an eye on what is coming next.</p>
+            </div>
+            <button class="text-button" id="seeAllTasks">View all tasks <span>→</span></button>
+          </div>
+          <div id="upcomingList" class="task-list compact-list"></div>
+          <div id="emptyUpcoming" class="empty-state hidden">
+            <div class="empty-icon">✓</div><strong>You're all caught up.</strong>
+            <p>No upcoming deadlines right now.</p>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="tasksView">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">STAY ORGANIZED</p>
+            <h1>My tasks</h1>
+            <p class="muted">Manage assignments, projects, and examinations.</p>
+          </div>
+          <button class="button button-dark" id="taskAddBtn">＋ Add Task</button>
+        </div>
+        <section class="panel">
+          <div class="toolbar">
+            <label class="search-wrap"><span class="search-icon">⌕</span><input type="search" id="searchInput"
+                placeholder="Search tasks by title..." aria-label="Search tasks by title"></label>
+            <select id="subjectFilter" aria-label="Filter by subject">
+              <option value="">All subjects</option>
+            </select>
+            <select id="priorityFilter" aria-label="Filter by priority">
+              <option value="">All priorities</option>
+              <option>Low</option>
+              <option>Medium</option>
+              <option>High</option>
+            </select>
+            <select id="statusFilter" aria-label="Filter by status">
+              <option value="">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="completed">Completed</option>
+              <option value="overdue">Overdue</option>
+            </select>
+          </div>
+          <div class="list-heading">
+            <h2>Task list</h2><span class="muted small" id="taskCountLabel">0 tasks</span>
+          </div>
+          <div id="taskList" class="task-list"></div>
+          <div id="emptyTasks" class="empty-state hidden">
+            <div class="empty-icon">＋</div><strong>No tasks found</strong>
+            <p>Add a task or change your search and filters.</p><button class="button button-outline"
+              id="emptyAddBtn">Create your first task</button>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="focusView">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">MAKE TIME COUNT</p>
+            <h1>Focus timer</h1>
+            <p class="muted">Set aside time for focused, distraction-free study.</p>
+          </div>
+        </div>
+        <div class="focus-layout">
+          <section class="panel timer-panel">
+            <div class="section-heading">
+              <div>
+                <h2>Study session</h2>
+                <p class="muted small">Choose a session length and get started.</p>
+              </div> <span class="timer-state" id="timerState" aria-live="polite">Ready</span>
+            </div>
+            <div class="session-control">
+              <span class="session-control-label">Session length</span>
+              <div class="duration-inputs">
+                <label class="minutes-input" for="sessionLength">
+                  <input id="sessionLength" type="number" min="0" max="180" value="25" inputmode="numeric">
+                  <span>min</span>
+                </label>
+                <span class="duration-separator" aria-hidden="true">:</span>
+                <label class="minutes-input" for="sessionSeconds">
+                  <input id="sessionSeconds" type="number" min="0" max="59" value="0" inputmode="numeric">
+                  <span>sec</span>
+                </label>
+              </div>
+            </div>
+            <div class="timer-presets" aria-label="Quick session lengths">
+              <button type="button" class="preset-button" data-minutes="25" aria-pressed="true">25 min</button>
+              <button type="button" class="preset-button" data-minutes="50" aria-pressed="false">50 min</button>
+              <button type="button" class="preset-button" data-minutes="90" aria-pressed="false">90 min</button>
+            </div>
+            <div class="timer-ring" id="timerRing" role="progressbar" aria-label="Study session progress"
+              aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete">
+              <div class="timer-inner">
+                <span class="timer-caption">TIME TO FOCUS</span>
+                <strong id="timerDisplay" aria-live="off">25:00</strong>
+                <span id="timerSubtext">Ready when you are</span>
+              </div>
+            </div>
+            <div class="timer-controls">
+              <button class="button button-dark" id="startTimer">Start</button>
+              <button class="button button-outline" id="pauseTimer" disabled>Pause</button>
+              <button class="button button-outline" id="resetTimer">Reset</button>
+            </div>
+            <p class="timer-hint">Tip: Choose one task to focus on until the timer ends.</p>
+          </section>
+          <section class="panel records-panel">
+            <div class="section-heading">
+              <div>
+                <h2>Study records</h2>
+                <p class="muted small">Your completed focus sessions.</p>
+              </div><span class="record-total" id="recordTotal">0 sessions</span>
+            </div>
+            <div class="record-summary">
+              <div><strong id="todayMinutes">0 min</strong><span>Today</span></div>
+              <div><strong id="allMinutes">0 min</strong><span>Total study time</span></div>
+            </div>
+            <p class="records-storage-note"><span aria-hidden="true">✓</span> Records save automatically on this device.
+            </p>
+            <div id="recordsList" class="records-list"></div>
+            <div id="emptyRecords" class="empty-records">
+              <span class="empty-record-icon" aria-hidden="true">◷</span>
+              <strong>No sessions yet</strong>
+              <span>Complete a focus session and it will show up here.</span>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+    <footer><span>STUDISH</span><span>Plan your work. Focus on your progress.</span></footer>
+  </div>
+  <div class="modal-backdrop hidden" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <form class="task-form" id="taskForm" novalidate>
+      <div class="modal-heading">
+        <div>
+          <p class="eyebrow">TASK DETAILS</p>
+          <h2 id="modalTitle">Add task</h2>
+        </div><button type="button" class="icon-button" id="closeModal" aria-label="Close">×</button>
+      </div>
+      <input type="hidden" id="taskId">
+      <label class="field-label" for="taskTitle">Title <span>*</span></label>
+      <input class="field" id="taskTitle" type="text" maxlength="90" placeholder="e.g. Math Quiz Review">
+      <small class="field-error" id="titleError"></small>
+
+      <label class="field-label" for="taskSubject">Subject <span>*</span></label>
+      <input class="field" id="taskSubject" type="text" maxlength="50" placeholder="e.g. Mathematics">
+      <small class="field-error" id="subjectError"></small>
+
+      <div class="field-label">Deadline <span>*</span></div>
+      <div class="deadline-fields">
+        <label for="taskDeadline">Due date<input class="field" id="taskDeadline" type="date" required></label>
+        <label for="taskDeadlineTime">Due time<input class="field" id="taskDeadlineTime" type="time" value="23:59"
+            required></label>
+      </div>
+      <small class="field-error" id="deadlineError"></small>
+
+      <label class="field-label">Priority</label>
+      <div class="priority-options">
+        <label><input type="radio" name="priority" value="Low"> <span class="priority-dot low-dot"></span>Low</label>
+        <label><input type="radio" name="priority" value="Medium" checked> <span
+            class="priority-dot medium-dot"></span>Medium</label>
+        <label><input type="radio" name="priority" value="High"> <span class="priority-dot high-dot"></span>High</label>
+      </div>
+      <label class="field-label" for="taskNotes">Notes <span class="optional">(optional)</span></label>
+      <textarea class="field notes-field" id="taskNotes" rows="3" maxlength="300"
+        placeholder="Add a short description or reminder..."></textarea>
+      <div class="form-message hidden" id="formMessage"></div>
+      <div class="modal-actions"><button class="button button-dark" type="submit" id="saveTaskBtn">Save
+          task</button><button class="button button-outline" type="button" id="cancelModal">Cancel</button></div>
+    </form>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="script.js"></script>
+</body>
+
+</html>
