@@ -10,15 +10,49 @@
 </head>
 
 <body>
-  <div class="app-shell">
+  <section class="auth-screen" id="authScreen">
+    <div class="auth-card">
+      <div class="auth-brand"><span class="auth-mark">S</span><span>STUDISH</span></div>
+      <p class="eyebrow">YOUR STUDY SPACE</p>
+      <h1 id="authHeading">Welcome back</h1>
+      <p class="muted auth-intro">Sign in to pick up where you left off.</p>
+      <form id="authForm">
+        <div class="auth-field-wrap hidden" id="authNameField">
+          <label class="field-label" for="authName">Your name</label>
+          <input class="field" id="authName" type="text" maxlength="60" autocomplete="name" placeholder="e.g. Alex">
+        </div>
+        <label class="field-label" for="authEmail">Email address</label>
+        <input class="field" id="authEmail" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com" required>
+        <label class="field-label" for="authPassword">Password</label>
+        <input class="field" id="authPassword" type="password" minlength="8" autocomplete="current-password" placeholder="At least 8 characters" required>
+        <div class="auth-field-wrap hidden" id="authConfirmField">
+          <label class="field-label" for="authConfirmPassword">Confirm password</label>
+          <input class="field" id="authConfirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Enter your password again">
+        </div>
+        <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
+        <button class="button button-dark auth-submit" id="authSubmit" type="submit">Sign in</button>
+      </form>
+      <p class="auth-switch-copy"><span id="authSwitchText">New to STUDISH?</span>
+        <button class="auth-switch" id="authModeToggle" type="button">Create an account</button>
+      </p>
+    </div>
+  </section>
+
+  <div class="app-shell hidden" id="appShell">
     <header class="topbar">
       <a class="brand" href="#" aria-label="STUDISH home">STUDISH</a>
       <nav class="main-nav" aria-label="Main navigation">
         <button class="nav-link active" data-view="dashboard">Dashboard</button>
         <button class="nav-link" data-view="tasks">Tasks</button>
         <button class="nav-link" data-view="focus">Focus Timer</button>
+        <button class="nav-link" data-view="materials">Materials</button>
       </nav>
-      <div class="topbar-date" id="todayLabel"></div>
+      <div class="topbar-actions">
+        <span class="account-greeting" id="accountGreeting"></span>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">Dark mode</button>
+        <button class="logout-button" id="logoutButton" type="button">Sign out</button>
+        <div class="topbar-date" id="todayLabel"></div>
+      </div>
     </header>
 
     <main>
@@ -56,6 +90,21 @@
               <div class="progress-fill" id="completionBar"></div>
             </div>
           </div>
+        </section>
+
+        <section class="panel insights-panel">
+          <div class="section-heading">
+            <div>
+              <h2>Momentum</h2>
+              <p class="muted small">A quick snapshot of your study rhythm.</p>
+            </div>
+          </div>
+          <div class="insights-grid">
+            <article class="insight-card"><span class="stat-label">Today focus</span><strong id="todayFocus">0 min</strong><span class="stat-foot">Tracked study time</span></article>
+            <article class="insight-card"><span class="stat-label">Next up</span><strong id="nextTaskLabel">Ready</strong><span class="stat-foot" id="nextTaskMeta">No task scheduled</span></article>
+            <article class="insight-card"><span class="stat-label">Streak</span><strong id="streakStat">0 days</strong><span class="stat-foot">Consecutive study days</span></article>
+          </div>
+          <div id="todayPlanList" class="mini-plan-list"></div>
         </section>
 
         <section class="panel deadlines-panel">
@@ -102,6 +151,15 @@
               <option value="completed">Completed</option>
               <option value="overdue">Overdue</option>
             </select>
+            <select id="sortOrder" aria-label="Sort tasks">
+              <option value="deadline">Sort: deadline</option>
+              <option value="priority">Sort: priority</option>
+              <option value="subject">Sort: subject</option>
+              <option value="created">Sort: newest</option>
+            </select>
+          </div>
+          <div class="toolbar-actions">
+            <button class="button button-outline" type="button" id="clearCompletedBtn">Clear completed</button>
           </div>
           <div class="list-heading">
             <h2>Task list</h2><span class="muted small" id="taskCountLabel">0 tasks</span>
@@ -187,6 +245,65 @@
           </section>
         </div>
       </section>
+
+      <section class="view" id="materialsView">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">LEARN FROM YOUR CLASS MATERIALS</p>
+            <h1>Study materials</h1>
+            <p class="muted">Open teacher-shared files and build a personal reviewer from them.</p>
+          </div>
+          <label class="button button-dark upload-button" for="materialUpload">＋ Add materials</label>
+          <input class="hidden" id="materialUpload" type="file" accept=".pdf,.docx,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple>
+        </div>
+        <div class="materials-layout">
+          <section class="panel materials-library">
+            <div class="section-heading">
+              <div>
+                <h2>Your library</h2>
+                <p class="muted small">PDF, Word, and PowerPoint files · processed in this browser</p>
+              </div>
+              <span class="record-total" id="materialCount">0 files</span>
+            </div>
+            <div id="materialList" class="material-list"></div>
+            <div class="empty-records" id="emptyMaterials">
+              <span class="empty-record-icon" aria-hidden="true">▤</span>
+              <strong>No materials yet</strong>
+              <span>Add a PDF, DOCX, or PPTX file to get started.</span>
+            </div>
+            <p class="material-notice">Files are processed and stored in this browser, not uploaded. Text and reviewer notes are saved locally with your STUDISH profile.</p>
+          </section>
+          <section class="panel reader-panel">
+            <div class="section-heading">
+              <div>
+                <h2 id="readerTitle">File viewer</h2>
+                <p class="muted small" id="readerSubtitle">Select a file from your library to read it.</p>
+              </div>
+              <button class="text-button hidden" id="deleteMaterial" type="button">Remove file</button>
+            </div>
+            <div class="reader-empty" id="readerEmpty">Your selected file preview will appear here.</div>
+            <iframe class="pdf-frame hidden" id="pdfPreview" title="PDF preview"></iframe>
+            <article class="document-text hidden" id="documentPreview"></article>
+            <div class="reviewer-actions hidden" id="reviewerActions">
+              <button class="button button-dark" id="generateReviewer" type="button">Build my reviewer</button>
+              <span class="muted small">Creates study notes and practice questions from the selected file.</span>
+            </div>
+            <section class="reviewer-panel hidden" id="reviewerPanel">
+              <div class="section-heading">
+                <div>
+                  <h2>My reviewer</h2>
+                  <p class="muted small">Edit your notes, then use the questions to check your recall.</p>
+                </div>
+                <button class="button button-outline" id="saveReviewer" type="button">Save notes</button>
+              </div>
+              <label class="field-label" for="reviewerNotes">Study notes</label>
+              <textarea class="field reviewer-notes" id="reviewerNotes" rows="8"></textarea>
+              <h3 class="quiz-heading">Practice questions</h3>
+              <div id="reviewerQuestions" class="reviewer-questions"></div>
+            </section>
+          </section>
+        </div>
+      </section>
     </main>
     <footer><span>STUDISH</span><span>Plan your work. Focus on your progress.</span></footer>
   </div>
@@ -231,6 +348,8 @@
     </form>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="script.js"></script>
 </body>
 
