@@ -44,8 +44,9 @@
       <nav class="main-nav" aria-label="Main navigation">
         <button class="nav-link active" data-view="dashboard">Dashboard</button>
         <button class="nav-link" data-view="tasks">Tasks</button>
+        <button class="nav-link" data-view="schedule">Schedule</button>
+        <button class="nav-link" data-view="reviewers">Reviewers</button>
         <button class="nav-link" data-view="focus">Focus Timer</button>
-        <button class="nav-link" data-view="materials">Materials</button>
       </nav>
       <div class="topbar-actions">
         <span class="account-greeting" id="accountGreeting"></span>
@@ -173,6 +174,168 @@
         </section>
       </section>
 
+      <section class="view" id="scheduleView">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">MAKE A PLAN THAT FITS YOUR WEEK</p>
+            <h1>Study schedule</h1>
+            <p class="muted">Turn your upcoming tasks into focused study sessions.</p>
+          </div>
+        </div>
+        <section class="panel schedule-settings-panel">
+          <div class="section-heading">
+            <div>
+              <h2>Your availability</h2>
+              <p class="muted small">Sessions are planned around deadlines and your available study time.</p>
+            </div>
+          </div>
+          <form id="scheduleForm">
+            <div class="schedule-options">
+              <label class="schedule-field" for="scheduleDailyMinutes">
+                <span>Study time per day</span>
+                <span class="schedule-input-wrap"><input class="field" id="scheduleDailyMinutes" type="number"
+                    min="15" max="720" step="15" value="120" required><span>min</span></span>
+              </label>
+              <label class="schedule-field" for="scheduleStartTime">
+                <span>Start studying at</span>
+                <input class="field" id="scheduleStartTime" type="time" value="18:00" required>
+              </label>
+              <label class="schedule-field" for="scheduleBreakMinutes">
+                <span>Break between sessions</span>
+                <span class="schedule-input-wrap"><input class="field" id="scheduleBreakMinutes" type="number"
+                    min="0" max="30" step="5" value="5" required><span>min</span></span>
+              </label>
+              <label class="schedule-field" for="scheduleHorizon">
+                <span>Plan ahead</span>
+                <select class="field" id="scheduleHorizon">
+                  <option value="7">1 week</option>
+                  <option value="14" selected>2 weeks</option>
+                  <option value="30">30 days</option>
+                </select>
+              </label>
+            </div>
+            <fieldset class="study-days-field">
+              <legend>Study days</legend>
+              <div class="study-day-options">
+                <label><input type="checkbox" name="studyDay" value="1" checked><span>Mon</span></label>
+                <label><input type="checkbox" name="studyDay" value="2" checked><span>Tue</span></label>
+                <label><input type="checkbox" name="studyDay" value="3" checked><span>Wed</span></label>
+                <label><input type="checkbox" name="studyDay" value="4" checked><span>Thu</span></label>
+                <label><input type="checkbox" name="studyDay" value="5" checked><span>Fri</span></label>
+                <label><input type="checkbox" name="studyDay" value="6"><span>Sat</span></label>
+                <label><input type="checkbox" name="studyDay" value="0"><span>Sun</span></label>
+              </div>
+            </fieldset>
+            <div class="schedule-generate-row">
+              <p class="muted small">Each task uses its time estimate, or 1 hour if it has no estimate.</p>
+              <button class="button button-dark" type="submit">Generate my schedule</button>
+            </div>
+          </form>
+        </section>
+        <section class="panel schedule-results-panel" aria-live="polite">
+          <div class="section-heading">
+            <div>
+              <h2>Your plan</h2>
+              <p class="muted small" id="scheduleSummary">Generate a schedule to see your upcoming study sessions.</p>
+            </div>
+            <span class="record-total hidden" id="scheduleGeneratedAt"></span>
+          </div>
+          <p class="schedule-notice hidden" id="scheduleNotice" role="status"></p>
+          <div class="schedule-stats hidden" id="scheduleStats">
+            <article><strong id="scheduleSessionCount">0</strong><span>sessions planned</span></article>
+            <article><strong id="scheduleStudyTime">0 min</strong><span>study time</span></article>
+            <article><strong id="scheduleUnplannedCount">0</strong><span>tasks need attention</span></article>
+          </div>
+          <div class="schedule-day-list" id="scheduleDayList"></div>
+          <div class="empty-state" id="scheduleEmpty">
+            <div class="empty-icon">◷</div>
+            <strong>No schedule yet</strong>
+            <p>Add tasks with deadlines, set your availability, and generate a plan.</p>
+          </div>
+          <section class="schedule-unplanned hidden" id="scheduleUnplanned">
+            <h3>Tasks needing attention</h3>
+            <p class="muted small">These tasks could not fit into the selected plan window and availability.</p>
+            <div class="schedule-unplanned-list" id="scheduleUnplannedList"></div>
+          </section>
+        </section>
+      </section>
+
+      <section class="view" id="reviewersView">
+        <div class="page-heading">
+          <div>
+            <p class="eyebrow">TURN YOUR NOTES INTO A STUDY TOOL</p>
+            <h1>Personal reviewer</h1>
+            <p class="muted">Create key points and recall questions from your notes.</p>
+          </div>
+        </div>
+        <section class="panel reviewer-creator-panel">
+          <div class="section-heading">
+            <div>
+              <h2>Create a reviewer</h2>
+              <p class="muted small">Your notes stay in this browser. Add clear notes for a more useful reviewer.</p>
+            </div>
+          </div>
+          <form id="reviewerForm">
+            <div class="reviewer-form-row">
+              <label class="reviewer-field" for="reviewerTitle">
+                <span>Reviewer title</span>
+                <input class="field" id="reviewerTitle" type="text" maxlength="80" placeholder="e.g. JavaScript Basics" required>
+              </label>
+              <label class="reviewer-field" for="reviewerSubject">
+                <span>Subject</span>
+                <input class="field" id="reviewerSubject" type="text" maxlength="60" placeholder="e.g. Programming" required>
+              </label>
+            </div>
+            <label class="reviewer-field reviewer-source-field" for="reviewerSource">
+              <span>Paste or type your study notes</span>
+              <textarea class="field reviewer-source" id="reviewerSource" rows="9" maxlength="20000"
+                placeholder="Paste your class notes here. Use complete sentences so key points and recall questions can be created from them." required></textarea>
+            </label>
+            <div class="reviewer-create-row">
+              <p class="muted small">Creates up to 8 key points and 5 practice questions, right in your browser.</p>
+              <button class="button button-dark" type="submit">Create and save reviewer</button>
+            </div>
+          </form>
+        </section>
+        <div class="reviewer-workspace">
+          <section class="panel reviewer-library-panel">
+            <div class="section-heading">
+              <div>
+                <h2>Saved reviewers</h2>
+                <p class="muted small">Your personal study library</p>
+              </div>
+              <span class="record-total" id="reviewerCount">0 reviewers</span>
+            </div>
+            <div class="reviewer-library-list" id="reviewerLibraryList"></div>
+            <div class="empty-records" id="emptyReviewers">
+              <span class="empty-record-icon" aria-hidden="true">▤</span>
+              <strong>No reviewers yet</strong>
+              <span>Create a reviewer from your notes to start studying.</span>
+            </div>
+          </section>
+          <section class="panel reviewer-results-panel" aria-live="polite">
+            <div class="section-heading">
+              <div>
+                <h2 id="reviewerResultTitle">Your reviewer</h2>
+                <p class="muted small" id="reviewerResultMeta">Create a reviewer or choose one from your library.</p>
+              </div>
+              <button class="text-button hidden" id="deleteReviewer" type="button">Delete</button>
+            </div>
+            <div class="reviewer-results hidden" id="reviewerResults">
+              <h3>Key points</h3>
+              <ul class="reviewer-key-points" id="reviewerKeyPoints"></ul>
+              <h3>Practice questions</h3>
+              <div class="reviewer-questions" id="reviewerQuestions"></div>
+            </div>
+            <div class="empty-state" id="emptyReviewerResult">
+              <div class="empty-icon">✎</div>
+              <strong>Ready when you are</strong>
+              <p>Your saved key points and recall questions will appear here.</p>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section class="view" id="focusView">
         <div class="page-heading">
           <div>
@@ -189,8 +352,21 @@
                 <p class="muted small">Choose a session length and get started.</p>
               </div> <span class="timer-state" id="timerState" aria-live="polite">Ready</span>
             </div>
+            <div class="timer-mode-switch" role="group" aria-label="Timer mode">
+              <button class="timer-mode-button active" id="singleTimerMode" type="button" aria-pressed="true">Single session</button>
+              <button class="timer-mode-button" id="pomodoroTimerMode" type="button" aria-pressed="false">Pomodoro</button>
+            </div>
+            <div class="pomodoro-options hidden" id="pomodoroOptions">
+              <label for="pomodoroShortBreak">Short break
+                <span class="pomodoro-break-input"><input id="pomodoroShortBreak" type="number" min="1" max="30" step="1" value="5"><span>min</span></span>
+              </label>
+              <label for="pomodoroLongBreak">Long break
+                <span class="pomodoro-break-input"><input id="pomodoroLongBreak" type="number" min="1" max="60" step="1" value="15"><span>min</span></span>
+              </label>
+              <div class="pomodoro-cycle" id="pomodoroCycle" aria-live="polite">0 of 4 focus rounds complete</div>
+            </div>
             <div class="session-control">
-              <span class="session-control-label">Session length</span>
+              <span class="session-control-label" id="sessionControlLabel">Session length</span>
               <div class="duration-inputs">
                 <label class="minutes-input" for="sessionLength">
                   <input id="sessionLength" type="number" min="0" max="180" value="25" inputmode="numeric">
@@ -211,7 +387,7 @@
             <div class="timer-ring" id="timerRing" role="progressbar" aria-label="Study session progress"
               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="0% complete">
               <div class="timer-inner">
-                <span class="timer-caption">TIME TO FOCUS</span>
+                <span class="timer-caption" id="timerCaption">TIME TO FOCUS</span>
                 <strong id="timerDisplay" aria-live="off">25:00</strong>
                 <span id="timerSubtext">Ready when you are</span>
               </div>
@@ -221,7 +397,7 @@
               <button class="button button-outline" id="pauseTimer" disabled>Pause</button>
               <button class="button button-outline" id="resetTimer">Reset</button>
             </div>
-            <p class="timer-hint">Tip: Choose one task to focus on until the timer ends.</p>
+            <p class="timer-hint" id="timerHint">Tip: Choose one task to focus on until the timer ends.</p>
           </section>
           <section class="panel records-panel">
             <div class="section-heading">
@@ -246,64 +422,6 @@
         </div>
       </section>
 
-      <section class="view" id="materialsView">
-        <div class="page-heading">
-          <div>
-            <p class="eyebrow">LEARN FROM YOUR CLASS MATERIALS</p>
-            <h1>Study materials</h1>
-            <p class="muted">Open teacher-shared files and build a personal reviewer from them.</p>
-          </div>
-          <label class="button button-dark upload-button" for="materialUpload">＋ Add materials</label>
-          <input class="hidden" id="materialUpload" type="file" accept=".pdf,.docx,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple>
-        </div>
-        <div class="materials-layout">
-          <section class="panel materials-library">
-            <div class="section-heading">
-              <div>
-                <h2>Your library</h2>
-                <p class="muted small">PDF, Word, and PowerPoint files · processed in this browser</p>
-              </div>
-              <span class="record-total" id="materialCount">0 files</span>
-            </div>
-            <div id="materialList" class="material-list"></div>
-            <div class="empty-records" id="emptyMaterials">
-              <span class="empty-record-icon" aria-hidden="true">▤</span>
-              <strong>No materials yet</strong>
-              <span>Add a PDF, DOCX, or PPTX file to get started.</span>
-            </div>
-            <p class="material-notice">Files are processed and stored in this browser, not uploaded. Text and reviewer notes are saved locally with your STUDISH profile.</p>
-          </section>
-          <section class="panel reader-panel">
-            <div class="section-heading">
-              <div>
-                <h2 id="readerTitle">File viewer</h2>
-                <p class="muted small" id="readerSubtitle">Select a file from your library to read it.</p>
-              </div>
-              <button class="text-button hidden" id="deleteMaterial" type="button">Remove file</button>
-            </div>
-            <div class="reader-empty" id="readerEmpty">Your selected file preview will appear here.</div>
-            <iframe class="pdf-frame hidden" id="pdfPreview" title="PDF preview"></iframe>
-            <article class="document-text hidden" id="documentPreview"></article>
-            <div class="reviewer-actions hidden" id="reviewerActions">
-              <button class="button button-dark" id="generateReviewer" type="button">Build my reviewer</button>
-              <span class="muted small">Creates study notes and practice questions from the selected file.</span>
-            </div>
-            <section class="reviewer-panel hidden" id="reviewerPanel">
-              <div class="section-heading">
-                <div>
-                  <h2>My reviewer</h2>
-                  <p class="muted small">Edit your notes, then use the questions to check your recall.</p>
-                </div>
-                <button class="button button-outline" id="saveReviewer" type="button">Save notes</button>
-              </div>
-              <label class="field-label" for="reviewerNotes">Study notes</label>
-              <textarea class="field reviewer-notes" id="reviewerNotes" rows="8"></textarea>
-              <h3 class="quiz-heading">Practice questions</h3>
-              <div id="reviewerQuestions" class="reviewer-questions"></div>
-            </section>
-          </section>
-        </div>
-      </section>
     </main>
     <footer><span>STUDISH</span><span>Plan your work. Focus on your progress.</span></footer>
   </div>
@@ -339,6 +457,10 @@
             class="priority-dot medium-dot"></span>Medium</label>
         <label><input type="radio" name="priority" value="High"> <span class="priority-dot high-dot"></span>High</label>
       </div>
+      <label class="field-label" for="taskEstimate">Estimated study time</label>
+      <span class="task-estimate-input"><input class="field" id="taskEstimate" type="number" min="15" max="600"
+          step="15" value="60" required><span>minutes</span></span>
+      <small class="field-error" id="estimateError"></small>
       <label class="field-label" for="taskNotes">Notes <span class="optional">(optional)</span></label>
       <textarea class="field notes-field" id="taskNotes" rows="3" maxlength="300"
         placeholder="Add a short description or reminder..."></textarea>
@@ -348,8 +470,6 @@
     </form>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="script.js"></script>
 </body>
 

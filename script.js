@@ -5,9 +5,26 @@
   const STORAGE_KEY = "studish_data_v1";
   const ACCOUNTS_KEY = "studish_accounts_v1";
   const SESSION_KEY = "studish_session_v1";
-  const MATERIAL_DB_NAME = "studish_material_files_v1";
   const PASSWORD_ITERATIONS = 210000;
-  const DEFAULT_STATE = { tasks: [], records: [], documents: [], settings: { sessionLength: 25, sessionSeconds: 0, theme: "light" } };
+  const DEFAULT_SCHEDULE_SETTINGS = { dailyMinutes: 120, studyDays: [1, 2, 3, 4, 5], startTime: "18:00", breakMinutes: 5, horizonDays: 14 };
+  const DEFAULT_STATE = {
+    tasks: [],
+    records: [],
+    reviewers: [],
+    schedule: null,
+    settings: {
+      sessionLength: 25,
+      sessionSeconds: 0,
+      theme: "light",
+      schedule: DEFAULT_SCHEDULE_SETTINGS,
+      timerMode: "single",
+      pomodoroShortBreak: 5,
+      pomodoroLongBreak: 15,
+      pomodoroCount: 0,
+      pomodoroPhase: "focus"
+    }
+  };
+  // Restore the signed-in profile from this browser session.
   function readCurrentUser() {
     try {
       const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY));
@@ -23,11 +40,19 @@
   let state = loadData();
   let authMode = "login";
   let authBusy = false;
-  let selectedMaterialId = null;
-  let previewObjectURL = null;
+  let timerMode = state.settings.timerMode === "pomodoro" ? "pomodoro" : "single";
+  let pomodoroPhase = ["focus", "shortBreak", "longBreak"].includes(state.settings.pomodoroPhase)
+    ? state.settings.pomodoroPhase
+    : "focus";
+  let pomodoroCount = Number.isInteger(state.settings.pomodoroCount)
+    ? Math.min(4, Math.max(0, state.settings.pomodoroCount))
+    : 0;
   let timerInterval = null;
-  let remainingSeconds = state.settings.sessionLength * 60 + state.settings.sessionSeconds;
+  let remainingSeconds = timerMode === "pomodoro" && pomodoroPhase !== "focus"
+    ? Number(state.settings[pomodoroPhase === "shortBreak" ? "pomodoroShortBreak" : "pomodoroLongBreak"]) * 60
+    : state.settings.sessionLength * 60 + state.settings.sessionSeconds;
   let timerRunning = false;
+  let selectedReviewerId = null;
   let toastTimeout = null;
   let completionAudioContext = null;
   let completionAudioUnavailable = false;
@@ -70,13 +95,16 @@
     // Replace each HTML-sensitive character with its safe entity.
     ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch])
   );
+  // Convert a date to a local YYYY-MM-DD value without a timezone shift.
   const formatISODate = (date) => {
     const normalized = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
     return normalized.toISOString().slice(0, 10);
   };
+  // Keep each account's saved study data separate in local storage.
   function getUserStorageKey() {
     return currentUser ? `${STORAGE_KEY}_${currentUser.id}` : STORAGE_KEY;
   }
+  // Apply the selected color theme and remember it with the profile.
   function applyTheme(themeName = "light") {
     const theme = themeName === "dark" ? "dark" : "light";
     document.body.dataset.theme = theme;
@@ -85,6 +113,7 @@
     state.settings.theme = theme;
     saveData();
   }
+  // Count consecutive calendar days that include a completed focus session.
   function calculateStudyStreak() {
     const studyDays = new Set(state.records
       .filter(record => record.date)
@@ -107,8 +136,26 @@
         return {
           ...DEFAULT_STATE,
           ...saved,
-          documents: Array.isArray(saved.documents) ? saved.documents : [],
-          settings: { ...DEFAULT_STATE.settings, ...(saved.settings || {}) }
+          reviewers: Array.isArray(saved.reviewers) ? saved.reviewers : [],
+          schedule: saved.schedule && Array.isArray(saved.schedule.sessions) ? saved.schedule : null,
+          settings: {
+            ...DEFAULT_STATE.settings,
+            ...(saved.settings || {}),
+            timerMode: saved.settings?.timerMode === "pomodoro" ? "pomodoro" : "single",
+            pomodoroShortBreak: Math.min(30, Math.max(1, Number(saved.settings?.pomodoroShortBreak) || 5)),
+            pomodoroLongBreak: Math.min(60, Math.max(1, Number(saved.settings?.pomodoroLongBreak) || 15)),
+            pomodoroCount: Math.min(4, Math.max(0, Math.floor(Number(saved.settings?.pomodoroCount) || 0))),
+            pomodoroPhase: ["focus", "shortBreak", "longBreak"].includes(saved.settings?.pomodoroPhase)
+              ? saved.settings.pomodoroPhase
+              : "focus",
+            schedule: {
+              ...DEFAULT_SCHEDULE_SETTINGS,
+              ...((saved.settings && saved.settings.schedule) || {}),
+              studyDays: Array.isArray(saved.settings?.schedule?.studyDays)
+                ? saved.settings.schedule.studyDays
+                : [...DEFAULT_SCHEDULE_SETTINGS.studyDays]
+            }
+          }
         };
       }
     } catch (error) { console.warn("Could not load STUDISH data:", error); }
@@ -126,6 +173,7 @@
       return false;
     }
   }
+  // Read account records and reject malformed stored data explicitly.
   function getAuthAccounts() {
     const stored = localStorage.getItem(ACCOUNTS_KEY);
     if (!stored) return [];
@@ -133,6 +181,7 @@
     if (!Array.isArray(accounts)) throw new Error("Saved account data is invalid. Clear this browser's STUDISH account data and try again.");
     return accounts;
   }
+  // Derive a salted password hash with the browser's Web Crypto API.
   async function hashPassword(password, saltHex) {
     if (!window.crypto?.subtle || !window.crypto.getRandomValues) {
       throw new Error("Secure password hashing is unavailable. Open STUDISH through localhost (for example, XAMPP) and try again.");
@@ -150,12 +199,14 @@
     const saltValue = [...salt].map(byte => byte.toString(16).padStart(2, "0")).join("");
     return { hash, salt: saltValue };
   }
+  // Show sign-in feedback with matching accessible status styling.
   function setAuthMessage(message, isError = true) {
     const element = $("#authMessage");
     element.textContent = message;
     element.classList.toggle("is-error", isError);
     element.classList.toggle("is-success", Boolean(message) && !isError);
   }
+  // Switch between sign-in and registration fields and instructions.
   function setAuthMode(mode) {
     authMode = mode;
     const registering = mode === "register";
@@ -173,13 +224,16 @@
     $("#authModeToggle").textContent = registering ? "Sign in" : "Create an account";
     setAuthMessage("");
   }
+  // Establish the account session, load its data, and show the dashboard.
   function enterApp(account, initialState = null) {
     const user = { id: account.id, email: account.email, name: account.name || "" };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
     currentUser = user;
     state = initialState || loadData();
-    selectedMaterialId = null;
-    resetMaterialReader();
+    selectedReviewerId = null;
+    timerMode = state.settings.timerMode;
+    pomodoroPhase = state.settings.pomodoroPhase;
+    pomodoroCount = state.settings.pomodoroCount;
     if (initialState && saveData()) {
       try {
         localStorage.removeItem(STORAGE_KEY);
@@ -192,19 +246,25 @@
     $("#appShell").classList.remove("hidden");
     $("#sessionLength").value = state.settings.sessionLength;
     $("#sessionSeconds").value = state.settings.sessionSeconds;
-    remainingSeconds = state.settings.sessionLength * 60 + state.settings.sessionSeconds;
+    $("#pomodoroShortBreak").value = state.settings.pomodoroShortBreak;
+    $("#pomodoroLongBreak").value = state.settings.pomodoroLongBreak;
+    loadScheduleControls();
+    remainingSeconds = getTimerDurationSeconds();
     $("#startTimer").disabled = false;
     $("#pauseTimer").disabled = true;
-    $("#sessionLength").disabled = false;
-    $("#sessionSeconds").disabled = false;
     updateTimerDisplay();
     updateTimerPresets();
-    setTimerState("Ready");
-    $("#timerSubtext").textContent = "Ready when you are";
+    updatePomodoroControls();
+    const onBreak = timerMode === "pomodoro" && pomodoroPhase !== "focus";
+    setTimerState(onBreak ? "Break ready" : "Ready", onBreak ? "on-break" : "");
+    $("#timerSubtext").textContent = timerMode === "pomodoro" && pomodoroPhase !== "focus"
+      ? "Start your break when you are ready."
+      : "Ready when you are";
     applyTheme(state.settings.theme || "light");
     renderAll();
     switchView("dashboard");
   }
+  // Validate credentials or create an account before opening the app.
   async function handleAuthSubmit(event) {
     event.preventDefault();
     if (authBusy) return;
@@ -266,305 +326,18 @@
       $("#authSubmit").disabled = false;
     }
   }
+  // Stop account-specific activity and return to the sign-in screen.
   function signOut() {
     if (timerRunning) pauseTimer();
     sessionStorage.removeItem(SESSION_KEY);
     currentUser = null;
     state = structuredClone(DEFAULT_STATE);
-    selectedMaterialId = null;
-    if (previewObjectURL) URL.revokeObjectURL(previewObjectURL);
-    previewObjectURL = null;
-    resetMaterialReader();
+    selectedReviewerId = null;
     $("#appShell").classList.add("hidden");
     $("#authScreen").classList.remove("hidden");
     $("#authForm").reset();
     setAuthMode("login");
     $("#authEmail").focus();
-  }
-  function resetMaterialReader() {
-    $("#readerTitle").textContent = "File viewer";
-    $("#readerSubtitle").textContent = "Select a file from your library to read it.";
-    $("#readerEmpty").classList.remove("hidden");
-    $("#pdfPreview").removeAttribute("src");
-    $("#pdfPreview").classList.add("hidden");
-    $("#documentPreview").textContent = "";
-    $("#documentPreview").classList.add("hidden");
-    $("#reviewerActions").classList.add("hidden");
-    $("#reviewerPanel").classList.add("hidden");
-    $("#reviewerNotes").value = "";
-    $("#reviewerQuestions").innerHTML = "";
-    $("#deleteMaterial").classList.add("hidden");
-  }
-  function openMaterialDatabase() {
-    return new Promise((resolve, reject) => {
-      if (!window.indexedDB) {
-        reject(new Error("This browser does not support local file storage."));
-        return;
-      }
-      const request = window.indexedDB.open(MATERIAL_DB_NAME, 1);
-      request.onupgradeneeded = () => {
-        if (!request.result.objectStoreNames.contains("files")) {
-          request.result.createObjectStore("files", { keyPath: "key" });
-        }
-      };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error || new Error("Could not open local file storage."));
-    });
-  }
-  async function storeMaterialFile(id, file) {
-    const database = await openMaterialDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = database.transaction("files", "readwrite");
-      transaction.objectStore("files").put({ key: `${currentUser.id}:${id}`, blob: file });
-      transaction.oncomplete = () => { database.close(); resolve(); };
-      transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not save this file locally.")); };
-      transaction.onabort = () => { database.close(); reject(transaction.error || new Error("Could not save this file locally.")); };
-    });
-  }
-  async function readMaterialFile(id) {
-    const database = await openMaterialDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = database.transaction("files", "readonly");
-      const request = transaction.objectStore("files").get(`${currentUser.id}:${id}`);
-      let fileRecord = null;
-      request.onsuccess = () => { fileRecord = request.result || null; };
-      transaction.oncomplete = () => { database.close(); resolve(fileRecord); };
-      transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not read this file from local storage.")); };
-    });
-  }
-  async function removeMaterialFile(id) {
-    const database = await openMaterialDatabase();
-    return new Promise((resolve, reject) => {
-      const transaction = database.transaction("files", "readwrite");
-      transaction.objectStore("files").delete(`${currentUser.id}:${id}`);
-      transaction.oncomplete = () => { database.close(); resolve(); };
-      transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not remove this file locally.")); };
-    });
-  }
-  function getMaterialExtension(filename) {
-    return filename.split(".").pop().toLowerCase();
-  }
-  function extractOfficeText(xmlText) {
-    const xml = new DOMParser().parseFromString(xmlText, "application/xml");
-    if (xml.querySelector("parsererror")) throw new Error("This Office file contains invalid document data.");
-    const paragraphs = [...xml.getElementsByTagNameNS("*", "p")];
-    return paragraphs.map(paragraph =>
-      [...paragraph.getElementsByTagNameNS("*", "t")].map(node => node.textContent).join("")
-    ).filter(line => line.trim()).join("\n");
-  }
-  async function extractMaterialText(file, extension) {
-    const buffer = await file.arrayBuffer();
-    if (extension === "pdf") {
-      if (!window.pdfjsLib) throw new Error("The PDF reader could not load. Check your internet connection, refresh, and try again.");
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-      const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
-      const pages = [];
-      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-        const page = await pdf.getPage(pageNumber);
-        const content = await page.getTextContent();
-        pages.push(content.items.map(item => item.str || "").join(" "));
-      }
-      return pages.join("\n\n");
-    }
-
-    if (!window.JSZip) throw new Error("The Office file reader could not load. Check your internet connection, refresh, and try again.");
-    const archive = await window.JSZip.loadAsync(buffer);
-    if (extension === "docx") {
-      const documentFile = archive.file("word/document.xml");
-      if (!documentFile) throw new Error("Could not find readable document text in this DOCX file.");
-      const documentXml = await documentFile.async("text");
-      const paragraphs = [extractOfficeText(documentXml)];
-      const supplementary = Object.keys(archive.files)
-        .filter(path => /^word\/(header|footer)\d+\.xml$/.test(path))
-        .sort();
-      for (const path of supplementary) paragraphs.push(extractOfficeText(await archive.file(path).async("text")));
-      return paragraphs.filter(Boolean).join("\n\n");
-    }
-
-    const slidePaths = Object.keys(archive.files)
-      .filter(path => /^ppt\/slides\/slide\d+\.xml$/.test(path))
-      .sort((a, b) => Number(a.match(/slide(\d+)/)[1]) - Number(b.match(/slide(\d+)/)[1]));
-    if (!slidePaths.length) throw new Error("Could not find readable slide text in this PPTX file.");
-    const slides = [];
-    for (const path of slidePaths) slides.push(extractOfficeText(await archive.file(path).async("text")));
-    return slides.filter(Boolean).join("\n\n");
-  }
-  function renderMaterials() {
-    const materials = state.documents || [];
-    $("#materialCount").textContent = `${materials.length} ${materials.length === 1 ? "file" : "files"}`;
-    $("#emptyMaterials").classList.toggle("hidden", materials.length > 0);
-    $("#materialList").innerHTML = materials.map(material => {
-      const extension = escapeHTML(String(material.type || "").toUpperCase());
-      const selected = material.id === selectedMaterialId ? " selected" : "";
-      const reviewerStatus = material.reviewerNotes ? "Reviewer ready" : "No reviewer yet";
-      return `<article class="material-item${selected}" data-material-id="${escapeHTML(material.id)}">
-        <button class="material-open" type="button" data-material-action="open">
-          <span class="file-type-icon">${extension}</span>
-          <span class="material-item-name">${escapeHTML(material.name)}<small class="material-item-meta">${reviewerStatus}</small></span>
-        </button>
-        <button class="material-delete" type="button" data-material-action="delete" aria-label="Remove ${escapeHTML(material.name)}">Remove</button>
-      </article>`;
-    }).join("");
-  }
-  async function displayMaterial(id) {
-    const material = state.documents.find(item => item.id === id);
-    if (!material) return;
-    selectedMaterialId = id;
-    renderMaterials();
-    $("#readerTitle").textContent = material.name;
-    $("#readerSubtitle").textContent = `${material.type.toUpperCase()} · Added ${new Date(material.addedAt).toLocaleDateString()}`;
-    $("#readerEmpty").classList.add("hidden");
-    $("#pdfPreview").classList.add("hidden");
-    $("#documentPreview").classList.add("hidden");
-    $("#reviewerActions").classList.remove("hidden");
-    $("#deleteMaterial").classList.remove("hidden");
-    if (previewObjectURL) URL.revokeObjectURL(previewObjectURL);
-    previewObjectURL = null;
-
-    if (material.type === "pdf") {
-      try {
-        const source = await readMaterialFile(id);
-        if (source?.blob) {
-          previewObjectURL = URL.createObjectURL(source.blob);
-          $("#pdfPreview").src = previewObjectURL;
-          $("#pdfPreview").classList.remove("hidden");
-        } else {
-          $("#documentPreview").textContent = material.text;
-          $("#documentPreview").classList.remove("hidden");
-        }
-      } catch (error) {
-        console.warn("Could not display STUDISH PDF:", error);
-        $("#documentPreview").textContent = material.text;
-        $("#documentPreview").classList.remove("hidden");
-        showToast("Showing extracted text because the original file could not be opened.");
-      }
-    } else {
-      $("#documentPreview").textContent = material.text;
-      $("#documentPreview").classList.remove("hidden");
-    }
-    const hasReviewer = Boolean(material.reviewerNotes || material.questions?.length);
-    $("#reviewerPanel").classList.toggle("hidden", !hasReviewer);
-    $("#reviewerNotes").value = material.reviewerNotes || "";
-    renderReviewerQuestions(material);
-  }
-  function renderReviewerQuestions(material) {
-    $("#reviewerQuestions").innerHTML = (material.questions || []).map((question, index) =>
-      `<article class="review-question">
-        <p>${index + 1}. ${escapeHTML(question.prompt)}</p>
-        <button type="button" data-question-index="${index}">Show answer</button>
-        <span class="review-answer hidden">${escapeHTML(question.answer)}</span>
-      </article>`
-    ).join("");
-  }
-  function buildReviewer() {
-    const material = state.documents.find(item => item.id === selectedMaterialId);
-    if (!material) return;
-    const sentences = (material.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [])
-      .map(sentence => sentence.trim().replace(/\s+/g, " "))
-      .filter(sentence => sentence.length >= 35);
-    const uniqueSentences = [...new Set(sentences)].slice(0, 10);
-    if (!uniqueSentences.length) {
-      showToast("There is not enough readable text in this file to build a reviewer.");
-      return;
-    }
-    material.reviewerNotes = `${material.name}\n\n${uniqueSentences.slice(0, 8).map(sentence => `• ${sentence}`).join("\n")}`;
-    const stopWords = new Set(["about", "after", "again", "being", "between", "could", "every", "first", "from", "have", "other", "their", "there", "these", "those", "which", "while", "where", "would", "should", "because"]);
-    material.questions = uniqueSentences.slice(0, 5).map(sentence => {
-      const keywords = sentence.match(/\b[A-Za-z][A-Za-z-]{4,}\b/g) || [];
-      const answer = keywords.find(word => !stopWords.has(word.toLowerCase())) || keywords[0];
-      return answer
-        ? { prompt: `Fill in the missing key term: ${sentence.replace(new RegExp(`\\b${answer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i"), "_____")}`, answer }
-        : { prompt: `Explain this idea in your own words: ${sentence}`, answer: sentence };
-    });
-    $("#reviewerNotes").value = material.reviewerNotes;
-    renderReviewerQuestions(material);
-    $("#reviewerPanel").classList.remove("hidden");
-    renderMaterials();
-    if (saveData()) showToast("Your reviewer is ready. Edit the notes and save your changes.");
-  }
-  async function handleMaterialUpload(event) {
-    const files = [...event.target.files];
-    event.target.value = "";
-    for (const file of files) {
-      try {
-        const extension = getMaterialExtension(file.name);
-        if (!["pdf", "docx", "pptx"].includes(extension)) throw new Error("Choose a PDF, DOCX, or PPTX file.");
-        if (file.size > 25 * 1024 * 1024) throw new Error(`${file.name} is larger than the 25 MB prototype limit.`);
-        const extractedText = await extractMaterialText(file, extension);
-        const text = extractedText.trim().slice(0, 50000);
-        if (!text) throw new Error(`No readable text was found in ${file.name}. Scanned PDFs need OCR, which this prototype does not include.`);
-        const id = window.crypto.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        const material = { id, name: file.name, type: extension, text, addedAt: Date.now(), reviewerNotes: "", questions: [] };
-        await storeMaterialFile(id, file);
-        state.documents.push(material);
-        if (!saveData()) {
-          state.documents = state.documents.filter(item => item.id !== id);
-          await removeMaterialFile(id);
-          throw new Error("Could not save the material. Free up browser storage and try again.");
-        }
-        await displayMaterial(id);
-        showToast(`${file.name} added to your library.`);
-      } catch (error) {
-        console.warn("Could not add STUDISH study material:", error);
-        showToast(error.message || "Could not read this file.");
-      }
-    }
-  }
-  async function handleMaterialListAction(event) {
-    const button = event.target.closest("[data-material-action]");
-    const row = event.target.closest("[data-material-id]");
-    if (!button || !row) return;
-    const id = row.dataset.materialId;
-    if (button.dataset.materialAction === "open") {
-      await displayMaterial(id);
-      return;
-    }
-    if (button.dataset.materialAction === "delete") {
-      const material = state.documents.find(item => item.id === id);
-      if (!material || !window.confirm(`Remove "${material.name}" and its reviewer?`)) return;
-      try {
-        const previousDocuments = state.documents;
-        state.documents = state.documents.filter(item => item.id !== id);
-        if (!saveData()) {
-          state.documents = previousDocuments;
-          return;
-        }
-        try {
-          await removeMaterialFile(id);
-        } catch (error) {
-          state.documents = previousDocuments;
-          saveData();
-          throw error;
-        }
-        if (selectedMaterialId === id) {
-          selectedMaterialId = null;
-          if (previewObjectURL) URL.revokeObjectURL(previewObjectURL);
-          previewObjectURL = null;
-          $("#readerTitle").textContent = "File viewer";
-          $("#readerSubtitle").textContent = "Select a file from your library to read it.";
-          $("#readerEmpty").classList.remove("hidden");
-          $("#pdfPreview").classList.add("hidden");
-          $("#documentPreview").classList.add("hidden");
-          $("#reviewerActions").classList.add("hidden");
-          $("#reviewerPanel").classList.add("hidden");
-          $("#deleteMaterial").classList.add("hidden");
-        }
-        renderMaterials();
-        showToast("Material removed.");
-      } catch (error) {
-        console.warn("Could not remove STUDISH study material:", error);
-        showToast(error.message || "Could not remove this file.");
-      }
-    }
-  }
-  function saveReviewerNotes() {
-    const material = state.documents.find(item => item.id === selectedMaterialId);
-    if (!material) return;
-    material.reviewerNotes = $("#reviewerNotes").value.trim();
-    if (saveData()) {
-      renderMaterials();
-      showToast("Reviewer notes saved.");
-    }
   }
   // Show a short-lived status message and replace any message already visible.
   function showToast(message) {
@@ -583,7 +356,11 @@
     $$(".nav-link").forEach(button => button.classList.toggle("active", button.dataset.view === viewName));
     if (viewName === "tasks") renderTasks();
     if (viewName === "focus") renderRecords();
-    if (viewName === "materials") renderMaterials();
+    if (viewName === "schedule") renderSchedule();
+    if (viewName === "reviewers") {
+      renderReviewerLibrary();
+      renderReviewer();
+    }
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   // Update dashboard counts and the overall completion progress bar.
@@ -784,10 +561,385 @@
   function getConfiguredDurationSeconds() {
     return Number($("#sessionLength").value) * 60 + Number($("#sessionSeconds").value);
   }
+  // Restore saved availability settings into the schedule form.
+  function loadScheduleControls() {
+    const settings = { ...DEFAULT_SCHEDULE_SETTINGS, ...(state.settings.schedule || {}) };
+    $("#scheduleDailyMinutes").value = settings.dailyMinutes;
+    $("#scheduleStartTime").value = settings.startTime;
+    $("#scheduleBreakMinutes").value = settings.breakMinutes;
+    $("#scheduleHorizon").value = String(settings.horizonDays);
+    $$('input[name="studyDay"]').forEach(input => {
+      input.checked = settings.studyDays.map(Number).includes(Number(input.value));
+    });
+  }
+  // Fingerprint pending tasks so the UI can detect an outdated plan.
+  function getScheduleTaskSignature(tasks = state.tasks.filter(task => !task.completed)) {
+    return JSON.stringify(tasks.map(task => ({
+      id: task.id,
+      title: task.title,
+      subject: task.subject,
+      deadline: task.deadline,
+      deadlineTime: task.deadlineTime,
+      priority: task.priority,
+      estimatedMinutes: Number(task.estimatedMinutes) || 60
+    })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
+  }
+  // Format a 24-hour schedule time using the user's locale.
+  function scheduleTimeLabel(time) {
+    const [hours, minutes] = time.split(":").map(Number);
+    return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  // Display generated sessions and flag plans made stale by task edits.
+  function renderSchedule() {
+    const schedule = state.schedule;
+    const hasSchedule = Boolean(schedule);
+    const sessions = hasSchedule ? schedule.sessions : [];
+    const unplanned = hasSchedule ? (schedule.unplanned || []) : [];
+    const stale = hasSchedule && schedule.taskSignature !== getScheduleTaskSignature();
+
+    $("#scheduleEmpty").classList.toggle("hidden", sessions.length > 0);
+    $("#scheduleEmpty").querySelector("strong").textContent = !hasSchedule
+      ? "No schedule yet"
+      : unplanned.length && !sessions.length ? "No sessions fit in this plan" : "Nothing to plan yet";
+    $("#scheduleEmpty").querySelector("p").textContent = !hasSchedule
+      ? "Add tasks with deadlines, set your availability, and generate a plan."
+      : unplanned.length && !sessions.length
+        ? "Try adding study days or increasing your available time, then generate a new plan."
+        : "All your tasks are complete. Add a task whenever you have more to study.";
+    $("#scheduleStats").classList.toggle("hidden", !hasSchedule);
+    $("#scheduleGeneratedAt").classList.toggle("hidden", !hasSchedule);
+    $("#scheduleUnplanned").classList.toggle("hidden", !unplanned.length);
+    $("#scheduleNotice").classList.toggle("hidden", !stale);
+    if (stale) {
+      $("#scheduleNotice").textContent = "Your task list has changed since this plan was generated. Generate a new schedule to bring it up to date.";
+    }
+    if (!hasSchedule) {
+      $("#scheduleSummary").textContent = "Generate a schedule to see your upcoming study sessions.";
+      $("#scheduleGeneratedAt").textContent = "";
+      $("#scheduleSessionCount").textContent = "0";
+      $("#scheduleStudyTime").textContent = "0 min";
+      $("#scheduleUnplannedCount").textContent = "0";
+      $("#scheduleDayList").innerHTML = "";
+      $("#scheduleUnplannedList").innerHTML = "";
+      return;
+    }
+
+    const studyDays = new Set(sessions.map(session => session.date)).size;
+    const totalMinutes = sessions.reduce((total, session) => total + session.minutes, 0);
+    $("#scheduleSummary").textContent = sessions.length
+      ? `${sessions.length} focused ${sessions.length === 1 ? "session" : "sessions"} across ${studyDays} ${studyDays === 1 ? "study day" : "study days"} in the next ${schedule.settings.horizonDays} days.`
+      : unplanned.length ? "No sessions could be scheduled with the selected availability." : "All your tasks are complete. Nothing needs scheduling.";
+    $("#scheduleGeneratedAt").textContent = `Generated ${new Date(schedule.generatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+    $("#scheduleSessionCount").textContent = sessions.length;
+    $("#scheduleStudyTime").textContent = `${totalMinutes} min`;
+    $("#scheduleUnplannedCount").textContent = unplanned.length;
+
+    const groupedSessions = new Map();
+    sessions.forEach(session => {
+      if (!groupedSessions.has(session.date)) groupedSessions.set(session.date, []);
+      groupedSessions.get(session.date).push(session);
+    });
+    $("#scheduleDayList").innerHTML = [...groupedSessions.entries()].map(([date, daySessions]) => {
+      const dayTotal = daySessions.reduce((total, session) => total + session.minutes, 0);
+      const dayLabel = new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+        weekday: "long", month: "long", day: "numeric"
+      });
+      return `<section class="schedule-day">
+        <div class="schedule-day-heading"><h3>${escapeHTML(dayLabel)}</h3><span>${dayTotal} min</span></div>
+        <div class="schedule-session-list">${daySessions.map(session => {
+          const endMinutes = Number(session.startTime.slice(0, 2)) * 60 + Number(session.startTime.slice(3)) + session.minutes;
+          const endTime = `${String(Math.floor(endMinutes / 60) % 24).padStart(2, "0")}:${String(endMinutes % 60).padStart(2, "0")}`;
+          return `<article class="schedule-session">
+            <span class="schedule-session-time">${escapeHTML(scheduleTimeLabel(session.startTime))}<small>${escapeHTML(scheduleTimeLabel(endTime))}</small></span>
+            <div class="schedule-session-details">
+              <strong>${escapeHTML(session.title)}</strong>
+              <span>${escapeHTML(session.subject)} · ${session.minutes} min · ${escapeHTML(session.priority)} priority</span>
+            </div>
+            <button class="button button-outline schedule-start-button" type="button" data-schedule-start="${session.minutes}" data-task-id="${escapeHTML(session.taskId)}">Start</button>
+          </article>`;
+        }).join("")}</div>
+      </section>`;
+    }).join("");
+    $("#scheduleUnplannedList").innerHTML = unplanned.map(item => `<article class="schedule-unplanned-item">
+      <div><strong>${escapeHTML(item.title)}</strong><span>${escapeHTML(item.subject)} · ${item.remainingMinutes} min remaining</span></div>
+      <p>${escapeHTML(item.reason)}</p>
+    </article>`).join("");
+  }
+  // Turn note sentences into key points and simple recall questions.
+  function createReviewerContent(source) {
+    const sentences = source
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map(sentence => sentence.trim().replace(/\s+/g, " "))
+      .filter(sentence => sentence.length >= 20);
+    const uniqueSentences = [...new Set(sentences)].slice(0, 10);
+    if (!uniqueSentences.length) return null;
+
+    const stopWords = new Set([
+      "about", "after", "again", "being", "between", "could", "every", "first",
+      "from", "have", "other", "their", "there", "these", "those", "which",
+      "while", "where", "would", "should", "because", "through", "during"
+    ]);
+    const questions = uniqueSentences.slice(0, 5).map(sentence => {
+      const keywords = sentence.match(/\b[A-Za-z][A-Za-z-]{4,}\b/g) || [];
+      const answer = keywords.find(word => !stopWords.has(word.toLowerCase())) || keywords[0];
+      if (!answer) return { prompt: `Explain this idea in your own words: ${sentence}`, answer: sentence };
+      const escapedAnswer = answer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return {
+        prompt: `Fill in the missing key term: ${sentence.replace(new RegExp(`\\b${escapedAnswer}\\b`, "i"), "_____")}`,
+        answer
+      };
+    });
+    return {
+      keyPoints: uniqueSentences.slice(0, 8),
+      questions
+    };
+  }
+  // List saved reviewers newest-first and mark the selected one.
+  function renderReviewerLibrary() {
+    const reviewers = state.reviewers || [];
+    $("#reviewerCount").textContent = `${reviewers.length} ${reviewers.length === 1 ? "reviewer" : "reviewers"}`;
+    $("#emptyReviewers").classList.toggle("hidden", reviewers.length > 0);
+    $("#reviewerLibraryList").innerHTML = [...reviewers]
+      .sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
+      .map(reviewer => `<article class="reviewer-library-item${reviewer.id === selectedReviewerId ? " selected" : ""}" data-reviewer-id="${escapeHTML(reviewer.id)}">
+        <button class="reviewer-open-button" type="button" data-reviewer-action="open">
+          <strong>${escapeHTML(reviewer.title)}</strong>
+          <span>${escapeHTML(reviewer.subject)} · ${reviewer.keyPoints.length} key points</span>
+        </button>
+        <button class="reviewer-delete-button" type="button" data-reviewer-action="delete" aria-label="Delete ${escapeHTML(reviewer.title)}">Delete</button>
+      </article>`).join("");
+  }
+  // Show the selected reviewer's key points and hidden answers.
+  function renderReviewer() {
+    const reviewer = state.reviewers.find(item => item.id === selectedReviewerId);
+    $("#reviewerResults").classList.toggle("hidden", !reviewer);
+    $("#emptyReviewerResult").classList.toggle("hidden", Boolean(reviewer));
+    $("#deleteReviewer").classList.toggle("hidden", !reviewer);
+    if (!reviewer) {
+      $("#reviewerResultTitle").textContent = "Your reviewer";
+      $("#reviewerResultMeta").textContent = "Create a reviewer or choose one from your library.";
+      $("#reviewerKeyPoints").innerHTML = "";
+      $("#reviewerQuestions").innerHTML = "";
+      return;
+    }
+
+    $("#reviewerResultTitle").textContent = reviewer.title;
+    $("#reviewerResultMeta").textContent = `${reviewer.subject} · Created ${new Date(reviewer.createdAt).toLocaleDateString()}`;
+    $("#reviewerKeyPoints").innerHTML = reviewer.keyPoints.map(point => `<li>${escapeHTML(point)}</li>`).join("");
+    $("#reviewerQuestions").innerHTML = reviewer.questions.map((question, index) =>
+      `<article class="reviewer-question">
+        <p>${index + 1}. ${escapeHTML(question.prompt)}</p>
+        <button type="button" data-reviewer-question="${index}" aria-expanded="false">Show answer</button>
+        <span class="reviewer-answer hidden">${escapeHTML(question.answer)}</span>
+      </article>`
+    ).join("");
+  }
+  // Validate note input, generate a reviewer, and persist it to the profile.
+  function handleCreateReviewer(event) {
+    event.preventDefault();
+    if (!$("#reviewerForm").reportValidity()) return;
+
+    const source = $("#reviewerSource").value.trim();
+    const content = createReviewerContent(source);
+    if (!content) {
+      showToast("Add a few complete sentences so key points and questions can be created.");
+      return;
+    }
+
+    const reviewer = {
+      id: window.crypto.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      title: $("#reviewerTitle").value.trim(),
+      subject: $("#reviewerSubject").value.trim(),
+      source,
+      ...content,
+      createdAt: Date.now()
+    };
+    state.reviewers.push(reviewer);
+    if (!saveData()) {
+      state.reviewers = state.reviewers.filter(item => item.id !== reviewer.id);
+      return;
+    }
+    selectedReviewerId = reviewer.id;
+    renderReviewerLibrary();
+    renderReviewer();
+    $("#reviewerForm").reset();
+    showToast("Your personal reviewer is ready and saved.");
+  }
+  // Open a saved reviewer or pass its deletion to the confirmation handler.
+  function handleReviewerLibraryAction(event) {
+    const button = event.target.closest("[data-reviewer-action]");
+    const row = event.target.closest("[data-reviewer-id]");
+    if (!button || !row) return;
+    const reviewer = state.reviewers.find(item => item.id === row.dataset.reviewerId);
+    if (!reviewer) return;
+
+    if (button.dataset.reviewerAction === "open") {
+      selectedReviewerId = reviewer.id;
+      renderReviewerLibrary();
+      renderReviewer();
+      return;
+    }
+    if (button.dataset.reviewerAction === "delete") deleteReviewer(reviewer);
+  }
+  // Delete a reviewer only after confirmation and successful persistence.
+  function deleteReviewer(reviewer) {
+    if (!window.confirm(`Delete "${reviewer.title}"? This action cannot be undone.`)) return;
+    const previousReviewers = state.reviewers;
+    state.reviewers = state.reviewers.filter(item => item.id !== reviewer.id);
+    if (!saveData()) {
+      state.reviewers = previousReviewers;
+      return;
+    }
+    if (selectedReviewerId === reviewer.id) selectedReviewerId = null;
+    renderReviewerLibrary();
+    renderReviewer();
+    showToast("Reviewer deleted.");
+  }
+  // Reveal or hide a practice answer and update its accessible state.
+  function toggleReviewerAnswer(event) {
+    const button = event.target.closest("[data-reviewer-question]");
+    if (!button) return;
+    const answer = button.nextElementSibling;
+    const expanded = answer.classList.toggle("hidden") === false;
+    button.setAttribute("aria-expanded", String(expanded));
+    button.textContent = expanded ? "Hide answer" : "Show answer";
+  }
+  // Allocate pending study time across available days before task deadlines.
+  function generateSchedule(event) {
+    event.preventDefault();
+    if (!$("#scheduleForm").reportValidity()) return;
+    const selectedDays = $$('input[name="studyDay"]:checked').map(input => Number(input.value)).sort((a, b) => a - b);
+    if (!selectedDays.length) {
+      showToast("Choose at least one study day.");
+      return;
+    }
+
+    const settings = {
+      dailyMinutes: Number($("#scheduleDailyMinutes").value),
+      studyDays: selectedDays,
+      startTime: $("#scheduleStartTime").value,
+      breakMinutes: Number($("#scheduleBreakMinutes").value),
+      horizonDays: Number($("#scheduleHorizon").value)
+    };
+    state.settings.schedule = settings;
+
+    const now = new Date();
+    const today = todayISO();
+    const horizonEnd = new Date(`${today}T00:00:00`);
+    horizonEnd.setDate(horizonEnd.getDate() + settings.horizonDays - 1);
+    const horizonEndISO = formatISODate(horizonEnd);
+    const pendingTasks = state.tasks.filter(task => !task.completed);
+    const tasks = pendingTasks.map(task => {
+      const deadline = getDeadlineDate(task);
+      const deadlineDate = deadline ? formatISODate(deadline) : horizonEndISO;
+      return {
+        task,
+        deadline,
+        deadlineDate: deadlineDate < today ? today : deadlineDate,
+        remainingMinutes: Math.max(15, Number(task.estimatedMinutes) || 60)
+      };
+    }).sort((a, b) =>
+      a.deadlineDate.localeCompare(b.deadlineDate) ||
+      ({ High: 0, Medium: 1, Low: 2 }[a.task.priority] ?? 1) - ({ High: 0, Medium: 1, Low: 2 }[b.task.priority] ?? 1) ||
+      (Number(a.task.createdAt) || 0) - (Number(b.task.createdAt) || 0)
+    );
+    const sessions = [];
+    const startParts = settings.startTime.split(":").map(Number);
+    const configuredStart = startParts[0] * 60 + startParts[1];
+    const sessionMinutes = Math.max(1, Math.ceil(getConfiguredDurationSeconds() / 60));
+    const todayStart = Math.max(configuredStart, Math.ceil((now.getHours() * 60 + now.getMinutes()) / 5) * 5);
+
+    for (let date = new Date(`${today}T00:00:00`); formatISODate(date) <= horizonEndISO; date.setDate(date.getDate() + 1)) {
+      if (!settings.studyDays.includes(date.getDay())) continue;
+      const dateISO = formatISODate(date);
+      const startMinute = dateISO === today ? todayStart : configuredStart;
+      let elapsedMinutes = 0;
+      let studyMinutes = 0;
+      let daySessionCount = 0;
+
+      for (const item of tasks) {
+        if (item.deadlineDate < dateISO || item.deadlineDate > horizonEndISO || item.remainingMinutes <= 0) continue;
+        const dueMinute = item.deadline && formatISODate(item.deadline) === dateISO && item.deadline > now
+          ? item.deadline.getHours() * 60 + item.deadline.getMinutes()
+          : 24 * 60;
+        while (item.remainingMinutes > 0 && studyMinutes < settings.dailyMinutes) {
+          const breakMinutes = daySessionCount ? settings.breakMinutes : 0;
+          const availableStudy = settings.dailyMinutes - studyMinutes;
+          const availableUntilMidnight = 24 * 60 - startMinute - elapsedMinutes - breakMinutes;
+          const availableUntilDeadline = dueMinute - startMinute - elapsedMinutes - breakMinutes;
+          const duration = Math.min(sessionMinutes, item.remainingMinutes, availableStudy, availableUntilMidnight, availableUntilDeadline);
+          if (duration <= 0) break;
+
+          elapsedMinutes += breakMinutes;
+          const sessionStart = startMinute + elapsedMinutes;
+          const sessionTime = `${String(Math.floor(sessionStart / 60)).padStart(2, "0")}:${String(sessionStart % 60).padStart(2, "0")}`;
+          sessions.push({
+            taskId: item.task.id,
+            title: item.task.title,
+            subject: item.task.subject,
+            priority: item.task.priority || "Medium",
+            date: dateISO,
+            startTime: sessionTime,
+            minutes: duration
+          });
+          elapsedMinutes += duration;
+          studyMinutes += duration;
+          daySessionCount += 1;
+          item.remainingMinutes -= duration;
+        }
+      }
+    }
+
+    const unplanned = tasks.filter(item => item.remainingMinutes > 0).map(item => {
+      const outsideWindow = item.deadlineDate > horizonEndISO;
+      const remainingMinutes = item.remainingMinutes;
+      return {
+        taskId: item.task.id,
+        title: item.task.title,
+        subject: item.task.subject,
+        remainingMinutes,
+        reason: outsideWindow
+          ? `Its deadline is outside this ${settings.horizonDays}-day plan window.`
+          : `${remainingMinutes} min could not fit before its deadline.`
+      };
+    });
+    state.schedule = {
+      generatedAt: Date.now(),
+      settings,
+      taskSignature: getScheduleTaskSignature(pendingTasks),
+      sessions,
+      unplanned
+    };
+    const saved = saveData();
+    renderSchedule();
+    if (!saved) return;
+    if (!pendingTasks.length) {
+      showToast("There are no pending tasks to schedule.");
+    } else if (sessions.length) {
+      showToast(`Schedule generated with ${sessions.length} focused ${sessions.length === 1 ? "session" : "sessions"}.`);
+    } else {
+      showToast("No sessions could be planned. Check availability and the tasks needing attention.");
+    }
+  }
+  // Start the selected plan item in the standard focus timer.
+  function startScheduledSession(event) {
+    const button = event.target.closest("[data-schedule-start]");
+    if (!button) return;
+    const task = state.tasks.find(item => item.id === button.dataset.taskId && !item.completed);
+    if (!task) {
+      showToast("This task is no longer pending. Generate a new schedule to update your plan.");
+      return;
+    }
+    setTimerMode("single");
+    setSessionLength(button.dataset.scheduleStart, 0);
+    switchView("focus");
+    startTimer();
+  }
   // Refresh every view that depends on task or study-record state.
   function renderAll() {
-    renderStats(); renderUpcoming(); renderTasks(); renderRecords(); renderMaterials();
+    renderStats(); renderUpcoming(); renderTasks(); renderRecords(); renderSchedule(); renderReviewerLibrary(); renderReviewer();
   }
+  // Remove finished tasks while leaving pending work untouched.
   function clearCompletedTasks() {
     const previousCount = state.tasks.length;
     state.tasks = state.tasks.filter(task => !task.completed);
@@ -808,6 +960,7 @@
     $("#taskSubject").value = task?.subject || "";
     $("#taskDeadline").value = task?.deadline || "";
     $("#taskDeadlineTime").value = task?.deadlineTime || "23:59";
+    $("#taskEstimate").value = task?.estimatedMinutes || 60;
     $("#taskNotes").value = task?.notes || "";
     const priority = task?.priority || "Medium";
     $(`input[name="priority"][value="${priority}"]`).checked = true;
@@ -823,7 +976,7 @@
   // Clear validation and form-level messages before another submission.
   function clearErrors() {
     // Clear each field-specific error label.
-    ["titleError", "subjectError", "deadlineError"].forEach(id => $(`#${id}`).textContent = "");
+    ["titleError", "subjectError", "deadlineError", "estimateError"].forEach(id => $(`#${id}`).textContent = "");
     $("#formMessage").classList.add("hidden");
   }
   // Validate required task details and ensure the deadline is a real date and time.
@@ -836,6 +989,10 @@
       valid = false;
     } else if (!getDeadlineDate(data)) {
       $("#deadlineError").textContent = "Enter a valid date and time.";
+      valid = false;
+    }
+    if (!Number.isInteger(data.estimatedMinutes) || data.estimatedMinutes < 15 || data.estimatedMinutes > 600 || data.estimatedMinutes % 15 !== 0) {
+      $("#estimateError").textContent = "Enter an estimate from 15 to 600 minutes in 15-minute steps.";
       valid = false;
     }
     return valid;
@@ -853,6 +1010,7 @@
       subject: $("#taskSubject").value.trim(),
       deadline: $("#taskDeadline").value,
       deadlineTime: $("#taskDeadlineTime").value,
+      estimatedMinutes: Number($("#taskEstimate").value),
       priority: $('input[name="priority"]:checked').value,
       notes: $("#taskNotes").value.trim(),
       completed: existing?.completed || false,
@@ -893,7 +1051,7 @@
     const minutes = Math.floor(remainingSeconds / 60).toString().padStart(2, "0");
     const seconds = (remainingSeconds % 60).toString().padStart(2, "0");
     $("#timerDisplay").textContent = `${minutes}:${seconds}`;
-    const totalSeconds = Math.max(1, getConfiguredDurationSeconds());
+    const totalSeconds = Math.max(1, getTimerDurationSeconds());
     const progress = Math.min(100, Math.max(0, Math.round((totalSeconds - remainingSeconds) / totalSeconds * 100)));
     $("#timerRing").style.setProperty("--timer-progress", `${progress}%`);
     $("#timerRing").setAttribute("aria-valuenow", progress);
@@ -902,8 +1060,8 @@
   // Synchronize the timer's text label and visual state classes.
   function setTimerState(label, className = "") {
     $("#timerState").textContent = label;
-    $("#timerRing").classList.remove("running", "paused", "finished");
-    if (className) $("#timerRing").classList.add(className);
+    $("#timerRing").classList.remove("running", "paused", "finished", "on-break");
+    if (className) $("#timerRing").classList.add(...className.split(" "));
   }
   // Mark the matching preset and disable preset changes during a running session.
   function updateTimerPresets() {
@@ -913,8 +1071,76 @@
         Number($("#sessionSeconds").value) === 0;
       button.classList.toggle("selected", selected);
       button.setAttribute("aria-pressed", String(selected));
-      button.disabled = timerRunning;
+      button.disabled = timerRunning || (timerMode === "pomodoro" && pomodoroPhase !== "focus");
     });
+  }
+  // Select the current focus or break duration in seconds.
+  function getTimerDurationSeconds() {
+    if (timerMode !== "pomodoro" || pomodoroPhase === "focus") return getConfiguredDurationSeconds();
+    const setting = pomodoroPhase === "shortBreak" ? "pomodoroShortBreak" : "pomodoroLongBreak";
+    return Number(state.settings[setting]) * 60;
+  }
+  // Keep mode buttons, duration inputs, and labels in sync with the phase.
+  function updatePomodoroControls() {
+    const pomodoro = timerMode === "pomodoro";
+    $("#singleTimerMode").classList.toggle("active", !pomodoro);
+    $("#singleTimerMode").setAttribute("aria-pressed", String(!pomodoro));
+    $("#pomodoroTimerMode").classList.toggle("active", pomodoro);
+    $("#pomodoroTimerMode").setAttribute("aria-pressed", String(pomodoro));
+    $("#singleTimerMode").disabled = timerRunning;
+    $("#pomodoroTimerMode").disabled = timerRunning;
+    $("#pomodoroOptions").classList.toggle("hidden", !pomodoro);
+    $("#pomodoroShortBreak").disabled = timerRunning;
+    $("#pomodoroLongBreak").disabled = timerRunning;
+    const editingFocus = !pomodoro || pomodoroPhase === "focus";
+    $("#sessionLength").disabled = timerRunning || !editingFocus;
+    $("#sessionSeconds").disabled = timerRunning || !editingFocus;
+    $("#sessionControlLabel").textContent = pomodoro ? "Focus length" : "Session length";
+    $("#timerCaption").textContent = pomodoro
+      ? pomodoroPhase === "focus" ? "FOCUS ROUND" : pomodoroPhase === "shortBreak" ? "SHORT BREAK" : "LONG BREAK"
+      : "TIME TO FOCUS";
+    $("#timerRing").setAttribute("aria-label", pomodoro
+      ? pomodoroPhase === "focus" ? "Pomodoro focus progress" : "Pomodoro break progress"
+      : "Study session progress");
+    $("#timerHint").textContent = pomodoro
+      ? "Complete four focus rounds to earn a long break."
+      : "Tip: Choose one task to focus on until the timer ends.";
+    $("#pomodoroCycle").textContent = pomodoroPhase === "longBreak" && pomodoroCount === 4
+      ? "4 of 4 focus rounds complete"
+      : `${pomodoroCount} of 4 focus rounds complete`;
+    $("#startTimer").textContent = pomodoro
+      ? pomodoroPhase === "focus" ? "Start focus" : "Start break"
+      : "Start";
+    updateTimerPresets();
+  }
+  // Switch timer modes and start a fresh Pomodoro cycle when selected.
+  function setTimerMode(mode) {
+    if (timerRunning || !["single", "pomodoro"].includes(mode) || timerMode === mode) return;
+    timerMode = mode;
+    state.settings.timerMode = mode;
+    if (mode === "pomodoro") {
+      pomodoroPhase = "focus";
+      pomodoroCount = 0;
+      state.settings.pomodoroPhase = pomodoroPhase;
+      state.settings.pomodoroCount = pomodoroCount;
+    }
+    resetTimer();
+    updatePomodoroControls();
+    saveData();
+  }
+  // Validate and save break lengths, refreshing the active break if needed.
+  function setPomodoroBreakLength(input, setting, maximum) {
+    const minutes = Number(input.value);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > maximum) {
+      input.value = state.settings[setting];
+      showToast(`Enter a break length from 1 to ${maximum} minutes.`);
+      return;
+    }
+    state.settings[setting] = minutes;
+    if (timerMode === "pomodoro" && pomodoroPhase === (setting === "pomodoroShortBreak" ? "shortBreak" : "longBreak")) {
+      resetTimer();
+    }
+    saveData();
   }
   // Create or resume the audio context in response to a user-initiated timer start.
   function prepareCompletionAudio() {
@@ -935,9 +1161,9 @@
     }
   }
   // Play a short completion melody when the focus timer reaches zero.
-  function playCompletionTone() {
+  function playCompletionTone(completionLabel = "Focus session complete") {
     if (completionAudioUnavailable || !completionAudioContext || completionAudioContext.state === "closed") {
-      showToast("Focus session complete. Timer sound is unavailable in this browser.");
+      showToast(`${completionLabel}. Timer sound is unavailable in this browser.`);
       return;
     }
     // Schedule each note in the completion melody using the active audio context.
@@ -967,51 +1193,56 @@
         completionAudioContext.resume().then(play).catch(error => {
           // Explain why no sound played while keeping the completed session saved.
           console.warn("Could not play STUDISH timer sound:", error);
-          showToast("Focus session complete, but the timer sound could not play.");
+          showToast(`${completionLabel}, but the timer sound could not play.`);
         });
       } else {
         play();
       }
     } catch (error) {
       console.warn("Could not play STUDISH timer sound:", error);
-      showToast("Focus session complete, but the timer sound could not play.");
+      showToast(`${completionLabel}, but the timer sound could not play.`);
     }
   }
   // Start counting down and lock duration controls until the session pauses or ends.
   function startTimer() {
     if (timerRunning) return;
     if (remainingSeconds <= 0) {
-      remainingSeconds = getConfiguredDurationSeconds();
+      remainingSeconds = getTimerDurationSeconds();
       updateTimerDisplay();
     }
     prepareCompletionAudio();
     timerRunning = true;
     $("#startTimer").disabled = true;
     $("#pauseTimer").disabled = false;
-    $("#sessionLength").disabled = true;
-    $("#sessionSeconds").disabled = true;
-    updateTimerPresets();
-    setTimerState("Focusing", "running");
-    $("#timerSubtext").textContent = "One thing at a time";
+    updatePomodoroControls();
+    const onBreak = timerMode === "pomodoro" && pomodoroPhase !== "focus";
+    setTimerState(onBreak ? "On break" : "Focusing", onBreak ? "running on-break" : "running");
+    $("#timerSubtext").textContent = timerMode === "pomodoro" && pomodoroPhase !== "focus"
+      ? "Step away and recharge."
+      : "One thing at a time";
     timerInterval = setInterval(tick, 1000);
   }
   // Stop the countdown while keeping the remaining time available to resume.
   function pauseTimer() {
     if (!timerRunning) return;
     clearInterval(timerInterval); timerInterval = null; timerRunning = false;
-    $("#startTimer").disabled = false; $("#pauseTimer").disabled = true; $("#sessionLength").disabled = false;
-    $("#sessionSeconds").disabled = false;
-    updateTimerPresets();
-    setTimerState("Paused", "paused"); $("#timerSubtext").textContent = "Take a breath. Resume when ready.";
+    $("#startTimer").disabled = false; $("#pauseTimer").disabled = true;
+    updatePomodoroControls();
+    setTimerState("Paused", timerMode === "pomodoro" && pomodoroPhase !== "focus" ? "paused on-break" : "paused");
+    $("#timerSubtext").textContent = "Take a breath. Resume when ready.";
   }
   // Stop the countdown and restore the currently configured duration.
   function resetTimer() {
     clearInterval(timerInterval); timerInterval = null; timerRunning = false;
-    remainingSeconds = getConfiguredDurationSeconds() || 1;
-    $("#startTimer").disabled = false; $("#pauseTimer").disabled = true; $("#sessionLength").disabled = false;
-    $("#sessionSeconds").disabled = false;
-    updateTimerPresets();
-    updateTimerDisplay(); setTimerState("Ready"); $("#timerSubtext").textContent = "Ready to focus";
+    remainingSeconds = getTimerDurationSeconds() || 1;
+    $("#startTimer").disabled = false; $("#pauseTimer").disabled = true;
+    updatePomodoroControls();
+    updateTimerDisplay();
+    const onBreak = timerMode === "pomodoro" && pomodoroPhase !== "focus";
+    setTimerState(onBreak ? "Break ready" : "Ready", onBreak ? "on-break" : "");
+    $("#timerSubtext").textContent = timerMode === "pomodoro" && pomodoroPhase !== "focus"
+      ? "Start your break when you are ready."
+      : "Ready to focus";
   }
   // Decrease the timer once per second and finish the session at zero.
   function tick() {
@@ -1022,16 +1253,50 @@
   // Save a completed focus session, refresh records, and play its completion tone.
   function finishTimer() {
     clearInterval(timerInterval); timerInterval = null; timerRunning = false;
-    const durationSeconds = state.settings.sessionLength * 60 + state.settings.sessionSeconds;
-    const minutes = Math.floor(durationSeconds / 60);
-    state.records.push({ id: String(Date.now()), minutes, durationSeconds, date: todayISO(), completedAt: Date.now() });
+    const finishedPhase = pomodoroPhase;
+    const durationSeconds = getTimerDurationSeconds();
+    let message;
+    if (timerMode !== "pomodoro" || finishedPhase === "focus") {
+      const minutes = Math.floor(durationSeconds / 60);
+      state.records.push({ id: String(Date.now()), minutes, durationSeconds, date: todayISO(), completedAt: Date.now() });
+      if (timerMode === "pomodoro") {
+        pomodoroCount = Math.min(4, pomodoroCount + 1);
+        pomodoroPhase = pomodoroCount === 4 ? "longBreak" : "shortBreak";
+        state.settings.pomodoroCount = pomodoroCount;
+        state.settings.pomodoroPhase = pomodoroPhase;
+        message = pomodoroPhase === "longBreak"
+          ? "Pomodoro complete. Your long break is ready."
+          : "Focus round complete. Your short break is ready.";
+        $("#timerSubtext").textContent = pomodoroPhase === "longBreak"
+          ? "Four rounds done. Take a longer break."
+          : "Nice work. Take a short break.";
+      } else {
+        message = `Focus session completed — ${formatStudyTime(durationSeconds)} recorded.`;
+        $("#timerSubtext").textContent = "Great work!";
+      }
+    } else {
+      pomodoroPhase = "focus";
+      if (finishedPhase === "longBreak") pomodoroCount = 0;
+      state.settings.pomodoroCount = pomodoroCount;
+      state.settings.pomodoroPhase = pomodoroPhase;
+      message = finishedPhase === "longBreak"
+        ? "Long break complete. Ready for a fresh Pomodoro cycle."
+        : "Break complete. Ready for your next focus round.";
+      $("#timerSubtext").textContent = "Recharge complete. Focus when you are ready.";
+    }
+
+    remainingSeconds = getTimerDurationSeconds();
     const saved = saveData();
     renderRecords();
-    $("#startTimer").disabled = false; $("#pauseTimer").disabled = true; $("#sessionLength").disabled = false;
-    setTimerState("Completed", "finished"); $("#timerSubtext").textContent = "Great work!";
-    updateTimerPresets();
-    if (saved) showToast(`Focus session completed — ${formatStudyTime(durationSeconds)} recorded.`);
-    playCompletionTone();
+    $("#startTimer").disabled = false; $("#pauseTimer").disabled = true;
+    updatePomodoroControls();
+    updateTimerDisplay();
+    const onBreak = timerMode === "pomodoro" && pomodoroPhase !== "focus";
+    setTimerState(timerMode === "pomodoro"
+      ? onBreak ? "Break ready" : "Focus ready"
+      : "Completed", onBreak ? "finished on-break" : "finished");
+    if (saved) showToast(message);
+    playCompletionTone(timerMode === "pomodoro" && finishedPhase !== "focus" ? "Break complete" : "Focus session complete");
   }
   // Clamp the selected session duration, save it, and restart the timer with that value.
   function setSessionLength(minutesValue = $("#sessionLength").value, secondsValue = $("#sessionSeconds").value) {
@@ -1049,6 +1314,7 @@
     state.settings.sessionLength = minutes;
     state.settings.sessionSeconds = seconds;
     saveData(); resetTimer();
+    updatePomodoroControls();
   }
   // Connect page controls to their handlers and render the initial application state.
   function initApp() {
@@ -1069,6 +1335,9 @@
     $("#todayLabel").textContent = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
     $("#sessionLength").value = state.settings.sessionLength;
     $("#sessionSeconds").value = state.settings.sessionSeconds;
+    $("#pomodoroShortBreak").value = state.settings.pomodoroShortBreak;
+    $("#pomodoroLongBreak").value = state.settings.pomodoroLongBreak;
+    loadScheduleControls();
     $("#sortOrder").value = "deadline";
     if (currentUser) {
       $("#accountGreeting").textContent = `Hi, ${currentUser.name || currentUser.email.split("@")[0]}`;
@@ -1080,9 +1349,13 @@
       $("#appShell").classList.add("hidden");
       setAuthMode("login");
     }
-    remainingSeconds = state.settings.sessionLength * 60 + state.settings.sessionSeconds;
+    remainingSeconds = getTimerDurationSeconds();
     updateTimerDisplay();
     updateTimerPresets();
+    updatePomodoroControls();
+    const onBreak = timerMode === "pomodoro" && pomodoroPhase !== "focus";
+    setTimerState(onBreak ? "Break ready" : "Ready", onBreak ? "on-break" : "");
+    $("#timerSubtext").textContent = onBreak ? "Start your break when you are ready." : "Ready when you are";
     $("#authForm").addEventListener("submit", handleAuthSubmit);
     $("#authModeToggle").addEventListener("click", () => setAuthMode(authMode === "login" ? "register" : "login"));
     $("#logoutButton").addEventListener("click", signOut);
@@ -1096,16 +1369,14 @@
     $("#emptyAddBtn").addEventListener("click", () => openTaskForm());
     $("#themeToggle").addEventListener("click", () => applyTheme(document.body.dataset.theme === "dark" ? "light" : "dark"));
     $("#clearCompletedBtn").addEventListener("click", clearCompletedTasks);
-    $("#materialUpload").addEventListener("change", handleMaterialUpload);
-    $("#materialList").addEventListener("click", event => { handleMaterialListAction(event); });
-    $("#generateReviewer").addEventListener("click", buildReviewer);
-    $("#saveReviewer").addEventListener("click", saveReviewerNotes);
-    $("#reviewerQuestions").addEventListener("click", event => {
-      const button = event.target.closest("[data-question-index]");
-      if (!button) return;
-      const answer = button.nextElementSibling;
-      answer.classList.toggle("hidden");
-      button.textContent = answer.classList.contains("hidden") ? "Show answer" : "Hide answer";
+    $("#scheduleForm").addEventListener("submit", generateSchedule);
+    $("#scheduleDayList").addEventListener("click", startScheduledSession);
+    $("#reviewerForm").addEventListener("submit", handleCreateReviewer);
+    $("#reviewerLibraryList").addEventListener("click", handleReviewerLibraryAction);
+    $("#reviewerQuestions").addEventListener("click", toggleReviewerAnswer);
+    $("#deleteReviewer").addEventListener("click", () => {
+      const reviewer = state.reviewers.find(item => item.id === selectedReviewerId);
+      if (reviewer) deleteReviewer(reviewer);
     });
     // Navigate to the task page when the dashboard link is selected.
     $("#seeAllTasks").addEventListener("click", () => switchView("tasks"));
@@ -1122,6 +1393,12 @@
     $("#startTimer").addEventListener("click", startTimer);
     $("#pauseTimer").addEventListener("click", pauseTimer);
     $("#resetTimer").addEventListener("click", resetTimer);
+    $("#singleTimerMode").addEventListener("click", () => setTimerMode("single"));
+    $("#pomodoroTimerMode").addEventListener("click", () => setTimerMode("pomodoro"));
+    $("#pomodoroShortBreak").addEventListener("change", () =>
+      setPomodoroBreakLength($("#pomodoroShortBreak"), "pomodoroShortBreak", 30));
+    $("#pomodoroLongBreak").addEventListener("change", () =>
+      setPomodoroBreakLength($("#pomodoroLongBreak"), "pomodoroLongBreak", 60));
     // Normalize and save the edited minute value.
     $("#sessionLength").addEventListener("change", () => setSessionLength());
     // Normalize and save the edited second value.
