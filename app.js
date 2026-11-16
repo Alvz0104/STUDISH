@@ -23,13 +23,8 @@
     $("#sortOrder").value = "deadline";
     if (currentUser) {
       $("#accountGreeting").textContent = `Hi, ${currentUser.name || currentUser.email.split("@")[0]}`;
-      $("#authScreen").classList.add("hidden");
       $("#appShell").classList.remove("hidden");
       applyTheme(state.settings.theme || "light");
-    } else {
-      $("#authScreen").classList.remove("hidden");
-      $("#appShell").classList.add("hidden");
-      setAuthMode("login");
     }
     remainingSeconds = getTimerDurationSeconds();
     updateTimerDisplay();
@@ -38,9 +33,12 @@
     const onBreak = timerMode === "pomodoro" && pomodoroPhase !== "focus";
     setTimerState(onBreak ? "Break ready" : "Ready", onBreak ? "on-break" : "");
     $("#timerSubtext").textContent = onBreak ? "Start your break when you are ready." : "Ready when you are";
-    $("#authForm").addEventListener("submit", handleAuthSubmit);
-    $("#authModeToggle").addEventListener("click", () => setAuthMode(authMode === "login" ? "register" : "login"));
-    $("#logoutButton").addEventListener("click", signOut);
+    const authForm = $("#authForm");
+    if (authForm) authForm.addEventListener("submit", handleAuthSubmit);
+    const authModeToggle = $("#authModeToggle");
+    if (authModeToggle) authModeToggle.addEventListener("click", () => setAuthMode(authMode === "login" ? "register" : "login"));
+    const logoutButton = $("#logoutButton");
+    if (logoutButton) logoutButton.addEventListener("click", signOut);
     // Switch to the view named by the clicked navigation button.
     $$(".nav-link").forEach(button => button.addEventListener("click", () => switchView(button.dataset.view)));
     // Open a new task form from the dashboard shortcut.

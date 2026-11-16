@@ -67,28 +67,30 @@
   }
   // Create the HTML for one task row, optionally using the compact dashboard layout.
   function taskMarkup(task, compact = false) {
-    const deadline = getDeadlineDate(task);
-    const overdue = isOverdue(task);
-    const status = deadline ? getDeadlineStatus(task, deadline) : { label: "No deadline", className: "deadline-normal" };
+    const normalizedTask = normalizeTask(task);
+    const deadline = getDeadlineDate(normalizedTask);
+    const overdue = isOverdue(normalizedTask);
+    const status = deadline ? getDeadlineStatus(normalizedTask, deadline) : { label: "No deadline", className: "deadline-normal" };
     const dateLabel = deadline
-      ? `${formatDate(task.deadline)} · ${deadline.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
+      ? `${formatDate(normalizedTask.deadline)} · ${deadline.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
       : "No deadline";
-    const completedAt = Number(task.completedAt);
-    const completionDate = task.completed && Number.isFinite(completedAt) && completedAt > 0
+    const completedAt = Number(normalizedTask.completedAt);
+    const completionDate = normalizedTask.completed && Number.isFinite(completedAt) && completedAt > 0
       ? new Date(completedAt)
       : null;
     const completionLabel = completionDate && !Number.isNaN(completionDate.getTime())
       ? `Finished ${completionDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} · ${completionDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
       : "";
-    const notePreview = task.notes ? `<div class="task-note-preview">${escapeHTML(task.notes)}</div>` : "";
-    return `<article class="task-row ${task.completed ? "is-complete" : ""} ${overdue ? "is-overdue" : ""}" data-task-id="${escapeHTML(task.id)}">
-      <input class="task-check" type="checkbox" aria-label="Mark ${escapeHTML(task.title)} complete" data-action="toggle" ${task.completed ? "checked" : ""}>
+    const notePreview = normalizedTask.notes ? `<div class="task-note-preview">${escapeHTML(normalizedTask.notes)}</div>` : "";
+    const priority = ["Low", "Medium", "High"].includes(normalizedTask.priority) ? normalizedTask.priority : "Medium";
+    return `<article class="task-row ${normalizedTask.completed ? "is-complete" : ""} ${overdue ? "is-overdue" : ""}" data-task-id="${escapeHTML(normalizedTask.id)}">
+      <input class="task-check" type="checkbox" aria-label="Mark ${escapeHTML(normalizedTask.title)} complete" data-action="toggle" ${normalizedTask.completed ? "checked" : ""}>
       <div class="task-main">
-        <p class="task-title">${escapeHTML(task.title)}</p>
-        <div class="task-meta"><span>${escapeHTML(task.subject)}</span><span class="separator">|</span><time class="${overdue ? "overdue-text" : ""}" ${deadline ? `datetime="${deadline.toISOString()}"` : ""}>${dateLabel}</time><span class="deadline-badge ${status.className}">${status.label}</span>${completionLabel ? `<time class="task-completed-at" datetime="${completionDate.toISOString()}">${completionLabel}</time>` : ""}</div>
+        <p class="task-title">${escapeHTML(normalizedTask.title)}</p>
+        <div class="task-meta"><span>${escapeHTML(normalizedTask.subject)}</span><span class="separator">|</span><time class="${overdue ? "overdue-text" : ""}" ${deadline ? `datetime="${deadline.toISOString()}"` : ""}>${dateLabel}</time><span class="deadline-badge ${status.className}">${status.label}</span>${completionLabel ? `<time class="task-completed-at" datetime="${completionDate.toISOString()}">${completionLabel}</time>` : ""}</div>
         ${notePreview}
       </div>
-      <div class="task-side"><span class="priority-pill ${task.priority.toLowerCase()}">${escapeHTML(task.priority)}</span>${compact ? "" : `<div class="task-actions"><button type="button" data-action="edit">Edit</button><button type="button" data-action="delete">Delete</button></div>`}</div>
+      <div class="task-side"><span class="priority-pill ${priority.toLowerCase()}">${escapeHTML(priority)}</span>${compact ? "" : `<div class="task-actions"><button type="button" data-action="edit">Edit</button><button type="button" data-action="delete">Delete</button></div>`}</div>
     </article>`;
   }
   // Show the four nearest pending tasks in the dashboard.
@@ -127,11 +129,11 @@
     const priorityScore = { Low: 1, Medium: 2, High: 3 };
     // Keep only tasks matching all active filters.
     const filtered = state.tasks.filter(task => {
-      // Test each task against the title, subject, priority, and status controls.
-      const matchesSearch = task.title.toLowerCase().includes(search);
-      const matchesSubject = !subject || task.subject === subject;
-      const matchesPriority = !priority || task.priority === priority;
-      const matchesStatus = !status || (status === "completed" ? task.completed : status === "overdue" ? isOverdue(task) : !task.completed && !isOverdue(task));
+      const normalizedTask = normalizeTask(task);
+      const matchesSearch = (normalizedTask.title || "").toLowerCase().includes(search);
+      const matchesSubject = !subject || normalizedTask.subject === subject;
+      const matchesPriority = !priority || normalizedTask.priority === priority;
+      const matchesStatus = !status || (status === "completed" ? normalizedTask.completed : status === "overdue" ? isOverdue(normalizedTask) : !normalizedTask.completed && !isOverdue(normalizedTask));
       return matchesSearch && matchesSubject && matchesPriority && matchesStatus;
     });
 
