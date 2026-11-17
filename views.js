@@ -214,3 +214,4 @@
     return Number($("#sessionLength").value) * 60 + Number($("#sessionSeconds").value);
   }
   // Restore saved availability settings into the schedule form.
+  // getConfiguredDurationSeconds combines the selected minutes and seconds into one duration.

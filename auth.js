@@ -153,14 +153,16 @@
   }
   // Stop account-specific activity and return to the sign-in screen.
   function signOut() {
-    const guestUser = { id: "guest", email: "guest@studish.local", name: "Guest" };
     if (timerRunning) pauseTimer();
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(guestUser));
-    currentUser = guestUser;
-    state = loadData();
+    sessionStorage.removeItem(SESSION_KEY);
+    currentUser = null;
+    state = structuredClone(DEFAULT_STATE);
     selectedReviewerId = null;
-    $("#appShell").classList.remove("hidden");
-    renderAll();
+    $("#appShell").classList.add("hidden");
+    $("#authScreen").classList.remove("hidden");
+    $("#authForm").reset();
+    setAuthMode("login");
+    $("#authEmail").focus();
   }
   // Show a short-lived status message and replace any message already visible.
   function showToast(message) {
@@ -172,3 +174,4 @@
     toastTimeout = setTimeout(() => toast.classList.remove("show"), 2400);
   }
   // Display the requested page and refresh its view-specific content.
+  // showToast briefly displays a status message, replacing any toast already on screen.

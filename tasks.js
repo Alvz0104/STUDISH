@@ -110,3 +110,4 @@
     }
   }
   // Update the visible countdown and its accessible progress indicator.
+  // handleTaskAction applies completion, edit, or confirmed deletion to the selected task.

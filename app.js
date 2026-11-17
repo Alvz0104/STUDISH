@@ -23,8 +23,13 @@
     $("#sortOrder").value = "deadline";
     if (currentUser) {
       $("#accountGreeting").textContent = `Hi, ${currentUser.name || currentUser.email.split("@")[0]}`;
+      $("#authScreen").classList.add("hidden");
       $("#appShell").classList.remove("hidden");
       applyTheme(state.settings.theme || "light");
+    } else {
+      $("#authScreen").classList.remove("hidden");
+      $("#appShell").classList.add("hidden");
+      setAuthMode("login");
     }
     remainingSeconds = getTimerDurationSeconds();
     updateTimerDisplay();
@@ -99,3 +104,4 @@
     }, 60000);
   }
   document.addEventListener("DOMContentLoaded", initApp);
+  // The DOMContentLoaded listener starts the app only after its page elements are available.

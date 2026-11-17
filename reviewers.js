@@ -138,3 +138,4 @@
     button.textContent = expanded ? "Hide answer" : "Show answer";
   }
   // Allocate pending study time across available days before task deadlines.
+  // toggleReviewerAnswer reveals or hides an answer and keeps its accessibility state in sync.

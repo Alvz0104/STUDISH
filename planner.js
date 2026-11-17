@@ -130,3 +130,4 @@
     startTimer();
   }
   // Refresh every view that depends on task or study-record state.
+  // startScheduledSession loads a planned task duration into the focus timer and starts it.

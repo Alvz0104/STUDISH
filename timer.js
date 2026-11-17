@@ -269,3 +269,4 @@
     updatePomodoroControls();
   }
   // Connect page controls to their handlers and render the initial application state.
+  // setSessionLength validates and saves the chosen duration, then resets the timer controls.

@@ -1,4 +1,4 @@
-"use strict";
+              "use strict";
   function loadScheduleControls() {
     const settings = { ...DEFAULT_SCHEDULE_SETTINGS, ...(state.settings.schedule || {}) };
     $("#scheduleDailyMinutes").value = settings.dailyMinutes;
@@ -103,3 +103,4 @@
     </article>`).join("");
   }
   // Turn note sentences into key points and simple recall questions.
+  // renderSchedule displays planned sessions, unplanned tasks, and any stale-plan notice.

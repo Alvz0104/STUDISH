@@ -172,3 +172,4 @@
     }
   }
   // Read account records and reject malformed stored data explicitly.
+  // saveData persists the current user's study state and reports storage failures.

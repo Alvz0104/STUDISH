@@ -10,7 +10,35 @@
 </head>
 
 <body>
-  <div class="app-shell" id="appShell">
+  <section class="auth-screen" id="authScreen">
+    <div class="auth-card">
+      <div class="auth-brand"><span class="auth-mark">S</span><span>STUDISH</span></div>
+      <p class="eyebrow">YOUR STUDY SPACE</p>
+      <h1 id="authHeading">Welcome back</h1>
+      <p class="muted auth-intro">Sign in to pick up where you left off.</p>
+      <form id="authForm">
+        <div class="auth-field-wrap hidden" id="authNameField">
+          <label class="field-label" for="authName">Your name</label>
+          <input class="field" id="authName" type="text" maxlength="60" autocomplete="name" placeholder="e.g. Alex">
+        </div>
+        <label class="field-label" for="authEmail">Email address</label>
+        <input class="field" id="authEmail" type="email" maxlength="254" autocomplete="email" placeholder="you@example.com" required>
+        <label class="field-label" for="authPassword">Password</label>
+        <input class="field" id="authPassword" type="password" minlength="8" autocomplete="current-password" placeholder="At least 8 characters" required>
+        <div class="auth-field-wrap hidden" id="authConfirmField">
+          <label class="field-label" for="authConfirmPassword">Confirm password</label>
+          <input class="field" id="authConfirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Enter your password again">
+        </div>
+        <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
+        <button class="button button-dark auth-submit" id="authSubmit" type="submit">Sign in</button>
+      </form>
+      <p class="auth-switch-copy"><span id="authSwitchText">New to STUDISH?</span>
+        <button class="auth-switch" id="authModeToggle" type="button">Create an account</button>
+      </p>
+    </div>
+  </section>
+
+  <div class="app-shell hidden" id="appShell">
     <header class="topbar">
       <a class="brand" href="#" aria-label="STUDISH home">STUDISH</a>
       <nav class="main-nav" aria-label="Main navigation">
@@ -23,6 +51,7 @@
       <div class="topbar-actions">
         <span class="account-greeting" id="accountGreeting"></span>
         <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme">Dark mode</button>
+        <button class="logout-button" id="logoutButton" type="button">Sign out</button>
         <div class="topbar-date" id="todayLabel"></div>
       </div>
     </header>
