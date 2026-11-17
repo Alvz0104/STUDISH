@@ -1,4 +1,5 @@
 "use strict";
+  // Show the requested app view and refresh its view-specific content.
   function switchView(viewName) {
     // Keep the displayed page and navigation highlight in sync.
     $$(".view").forEach(view => view.classList.toggle("active", view.id === `${viewName}View`));
@@ -65,9 +66,24 @@
     if (days < 7) return { label: `${days}d ${hours}h left`, className: "deadline-soon" };
     return { label: `${days}d left`, className: "deadline-normal" };
   }
+  // Fill missing task values so saved data displays consistently in the UI.
+  function normalizeTask(task) {
+    const source = task && typeof task === "object" ? task : {};
+    return {
+      ...source,
+      id: String(source.id ?? ""),
+      title: String(source.title ?? ""),
+      subject: String(source.subject ?? ""),
+      deadline: typeof source.deadline === "string" ? source.deadline : "",
+      deadlineTime: typeof source.deadlineTime === "string" ? source.deadlineTime : "",
+      priority: ["Low", "Medium", "High"].includes(source.priority) ? source.priority : "Medium",
+      completed: source.completed === true,
+      completedAt: source.completedAt ?? null,
+      notes: String(source.notes ?? "")
+    };
+  }
   // Create the HTML for one task row, optionally using the compact dashboard layout.
-  function taskMarkup(task, compact = false) {
-    const normalizedTask = normalizeTask(task);
+  function taskMarkup(normalizedTask, compact = false) {
     const deadline = getDeadlineDate(normalizedTask);
     const overdue = isOverdue(normalizedTask);
     const status = deadline ? getDeadlineStatus(normalizedTask, deadline) : { label: "No deadline", className: "deadline-normal" };
@@ -82,7 +98,7 @@
       ? `Finished ${completionDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })} · ${completionDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
       : "";
     const notePreview = normalizedTask.notes ? `<div class="task-note-preview">${escapeHTML(normalizedTask.notes)}</div>` : "";
-    const priority = ["Low", "Medium", "High"].includes(normalizedTask.priority) ? normalizedTask.priority : "Medium";
+    const priority = normalizedTask.priority;
     return `<article class="task-row ${normalizedTask.completed ? "is-complete" : ""} ${overdue ? "is-overdue" : ""}" data-task-id="${escapeHTML(normalizedTask.id)}">
       <input class="task-check" type="checkbox" aria-label="Mark ${escapeHTML(normalizedTask.title)} complete" data-action="toggle" ${normalizedTask.completed ? "checked" : ""}>
       <div class="task-main">
@@ -96,7 +112,7 @@
   // Show the four nearest pending tasks in the dashboard.
   function renderUpcoming() {
     // Exclude finished tasks from the dashboard's upcoming list.
-    const upcoming = state.tasks.filter(task => !task.completed)
+    const upcoming = state.tasks.map(normalizeTask).filter(task => !task.completed)
       // Compare deadlines, placing tasks without valid deadlines last.
       .sort((a, b) => (getDeadlineDate(a)?.getTime() ?? Infinity) - (getDeadlineDate(b)?.getTime() ?? Infinity))
       .slice(0, 4);
@@ -105,11 +121,11 @@
     $("#emptyUpcoming").classList.toggle("hidden", upcoming.length > 0);
   }
   // Populate the subject selector while retaining its current choice when possible.
-  function populateSubjectFilter() {
+  function populateSubjectFilter(tasks) {
     const select = $("#subjectFilter");
     const selected = select.value;
     // Read each task's subject before discarding empty values and removing duplicates.
-    const subjects = [...new Set(state.tasks.map(task => task.subject)
+    const subjects = [...new Set(tasks.map(task => task.subject)
       // Ignore empty subject values before building the unique list.
       .filter(Boolean))]
       // Sort subject names alphabetically for easier selection.
@@ -120,7 +136,8 @@
   }
   // Filter, sort, and display tasks using the current search and filter controls.
   function renderTasks() {
-    populateSubjectFilter();
+    const tasks = state.tasks.map(normalizeTask);
+    populateSubjectFilter(tasks);
     const search = $("#searchInput").value.trim().toLowerCase();
     const subject = $("#subjectFilter").value;
     const priority = $("#priorityFilter").value;
@@ -128,12 +145,11 @@
     const sortValue = $("#sortOrder").value || "deadline";
     const priorityScore = { Low: 1, Medium: 2, High: 3 };
     // Keep only tasks matching all active filters.
-    const filtered = state.tasks.filter(task => {
-      const normalizedTask = normalizeTask(task);
-      const matchesSearch = (normalizedTask.title || "").toLowerCase().includes(search);
-      const matchesSubject = !subject || normalizedTask.subject === subject;
-      const matchesPriority = !priority || normalizedTask.priority === priority;
-      const matchesStatus = !status || (status === "completed" ? normalizedTask.completed : status === "overdue" ? isOverdue(normalizedTask) : !normalizedTask.completed && !isOverdue(normalizedTask));
+    const filtered = tasks.filter(task => {
+      const matchesSearch = task.title.toLowerCase().includes(search);
+      const matchesSubject = !subject || task.subject === subject;
+      const matchesPriority = !priority || task.priority === priority;
+      const matchesStatus = !status || (status === "completed" ? task.completed : status === "overdue" ? isOverdue(task) : !task.completed && !isOverdue(task));
       return matchesSearch && matchesSubject && matchesPriority && matchesStatus;
     });
 
@@ -213,5 +229,3 @@
   function getConfiguredDurationSeconds() {
     return Number($("#sessionLength").value) * 60 + Number($("#sessionSeconds").value);
   }
-  // Restore saved availability settings into the schedule form.
-  // getConfiguredDurationSeconds combines the selected minutes and seconds into one duration.

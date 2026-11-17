@@ -1,4 +1,5 @@
 "use strict";
+  // Turn study notes into key points and fill-in-the-blank questions.
   function createReviewerContent(source) {
     const sentences = source
       .split(/(?<=[.!?])\s+|\n+/)
@@ -137,5 +138,3 @@
     button.setAttribute("aria-expanded", String(expanded));
     button.textContent = expanded ? "Hide answer" : "Show answer";
   }
-  // Allocate pending study time across available days before task deadlines.
-  // toggleReviewerAnswer reveals or hides an answer and keeps its accessibility state in sync.

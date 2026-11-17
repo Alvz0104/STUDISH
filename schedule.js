@@ -1,4 +1,5 @@
               "use strict";
+  // Load saved availability settings into the schedule form.
   function loadScheduleControls() {
     const settings = { ...DEFAULT_SCHEDULE_SETTINGS, ...(state.settings.schedule || {}) };
     $("#scheduleDailyMinutes").value = settings.dailyMinutes;
@@ -102,5 +103,3 @@
       <p>${escapeHTML(item.reason)}</p>
     </article>`).join("");
   }
-  // Turn note sentences into key points and simple recall questions.
-  // renderSchedule displays planned sessions, unplanned tasks, and any stale-plan notice.

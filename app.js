@@ -1,4 +1,5 @@
 "use strict";
+  // Initialize the app, connect UI events, and render the initial screen.
   function initApp() {
     // Remove the previously installed offline worker and its app-shell cache.
     if ("serviceWorker" in navigator) {
@@ -104,4 +105,3 @@
     }, 60000);
   }
   document.addEventListener("DOMContentLoaded", initApp);
-  // The DOMContentLoaded listener starts the app only after its page elements are available.

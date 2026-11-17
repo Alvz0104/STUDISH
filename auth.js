@@ -1,4 +1,5 @@
 "use strict";
+  // Read registered profiles from local storage and validate their shape.
   function getAuthAccounts() {
     const stored = localStorage.getItem(ACCOUNTS_KEY);
     if (!stored) return [];
@@ -173,5 +174,3 @@
     // Hide the toast automatically after its display interval.
     toastTimeout = setTimeout(() => toast.classList.remove("show"), 2400);
   }
-  // Display the requested page and refresh its view-specific content.
-  // showToast briefly displays a status message, replacing any toast already on screen.

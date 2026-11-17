@@ -1,4 +1,5 @@
 "use strict";
+  // Update the countdown text and circular progress indicator.
   function updateTimerDisplay() {
     const minutes = Math.floor(remainingSeconds / 60).toString().padStart(2, "0");
     const seconds = (remainingSeconds % 60).toString().padStart(2, "0");
@@ -268,5 +269,3 @@
     saveData(); resetTimer();
     updatePomodoroControls();
   }
-  // Connect page controls to their handlers and render the initial application state.
-  // setSessionLength validates and saves the chosen duration, then resets the timer controls.

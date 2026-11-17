@@ -1,16 +1,22 @@
 "use strict";
+  // Refresh all dashboard, task, schedule, reviewer, and record displays.
   function renderAll() {
     renderStats(); renderUpcoming(); renderTasks(); renderRecords(); renderSchedule(); renderReviewerLibrary(); renderReviewer();
   }
   // Remove finished tasks while leaving pending work untouched.
   function clearCompletedTasks() {
     const previousCount = state.tasks.length;
+    const previousTasks = state.tasks;
     state.tasks = state.tasks.filter(task => !task.completed);
     if (state.tasks.length === previousCount) {
       showToast("No completed tasks to clear.");
       return;
     }
-    saveData(); renderAll(); showToast("Completed tasks cleared.");
+    if (!saveData()) {
+      state.tasks = previousTasks;
+      return;
+    }
+    renderAll(); showToast("Completed tasks cleared.");
   }
   // Reset and display the task form, filling it when editing an existing task.
   function openTaskForm(task = null) {
@@ -66,7 +72,7 @@
     clearErrors();
     const id = $("#taskId").value;
     // Find the saved task so edits retain its creation and completion metadata.
-    const existing = state.tasks.find(task => task.id === id);
+    const existing = state.tasks.find(task => String(task.id) === id);
     const data = {
       id: id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
       title: $("#taskTitle").value.trim(),
@@ -82,9 +88,16 @@
     };
     if (!validateTask(data)) return;
     // Replace the edited item, or append a new task when no matching item exists.
-    if (existing) state.tasks = state.tasks.map(task => task.id === id ? data : task);
-    else state.tasks.push(data);
-    saveData(); closeTaskForm(); renderAll();
+    const previousTasks = state.tasks;
+    state.tasks = existing
+      ? state.tasks.map(task => String(task.id) === id ? data : task)
+      : [...state.tasks, data];
+    if (!saveData()) {
+      state.tasks = previousTasks;
+      renderAll();
+      return;
+    }
+    closeTaskForm(); renderAll();
     showToast(existing ? "Task updated successfully." : "Task added successfully.");
   }
   // Handle task completion toggles, edits, and confirmed deletions.
@@ -92,22 +105,34 @@
     const row = event.target.closest("[data-task-id]");
     if (!row) return;
     // Resolve the task associated with the clicked task row.
-    const task = state.tasks.find(item => item.id === row.dataset.taskId);
+    const task = state.tasks.find(item => String(item.id) === row.dataset.taskId);
     if (!task) return;
     const action = event.target.dataset.action;
     if (action === "toggle") {
+      const previousCompleted = task.completed;
+      const previousCompletedAt = task.completedAt;
       task.completed = event.target.checked;
       task.completedAt = task.completed ? Date.now() : null;
-      saveData(); renderAll();
+      if (!saveData()) {
+        task.completed = previousCompleted;
+        task.completedAt = previousCompletedAt;
+        renderAll();
+        return;
+      }
+      renderAll();
       showToast(task.completed ? "Task marked as completed." : "Task moved back to pending.");
     } else if (action === "edit") openTaskForm(task);
     else if (action === "delete") {
       if (window.confirm(`Delete "${task.title}"? This action cannot be undone.`)) {
         // Remove only the task the user confirmed deleting.
+        const previousTasks = state.tasks;
         state.tasks = state.tasks.filter(item => item.id !== task.id);
-        saveData(); renderAll(); showToast("Task deleted.");
+        if (!saveData()) {
+          state.tasks = previousTasks;
+          renderAll();
+          return;
+        }
+        renderAll(); showToast("Task deleted.");
       }
     }
   }
-  // Update the visible countdown and its accessible progress indicator.
-  // handleTaskAction applies completion, edit, or confirmed deletion to the selected task.
